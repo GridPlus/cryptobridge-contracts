@@ -1,0 +1,30 @@
+{
+  "name": "trustless-relay",
+  "version": "1.0.0",
+  "description": "Contracts for trustless relay",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alex-miller-0/trustless-relay.git"
+  },
+  "keywords": [
+    "Ethereum",
+    "Blockchain",
+    "Scaling"
+  ],
+  "author": "Alex Miller",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/alex-miller-0/trustless-relay/issues"
+  },
+  "homepage": "https://github.com/alex-miller-0/trustless-relay#readme",
+  "dependencies": {
+    "truffle-hdwallet-provider": "0.0.3"
+  }
+}
