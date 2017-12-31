@@ -1,5 +1,16 @@
 library Merkle {
 
+  // From a set of input challenge data, this function pulls out the tx and header
+  // data and hashes it to get the leaves.
+  // Here, the bytes data is grouped as:
+  // [txData, txNodes, headerData, headerNodes]
+  // With 32 bytes prefixing each to get the length of the segment.
+  function getLeaves(bytes data) public constant returns (bytes32[2]) {
+
+  }
+
+  function getBytes
+
   // Get the hash of a transaction given the data that went into it.
   function getTxHash() public constant returns (bytes32) {
 
@@ -7,7 +18,7 @@ library Merkle {
 
   // Get the has of a header given the data that went into it
   function getHeaderHash() public constant returns (bytes32) {
-    
+
   }
 
   // Return the root of a Merkle tree. Two leaves are included, which must be

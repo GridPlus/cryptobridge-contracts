@@ -30,12 +30,28 @@ contract TrustedRelay {
 
   // Anyone can contest a header that has been stored and can overwrite it if
   // they can prove that it is incorrect.
-  // address origin       The address-id of the origin chain
-  // uint256 loc          The index of the headerRoot in question in headerRoots
-  // 
-  function contestHeader(address origin, uint256 loc, bytes32 txPartner, bytes32 headerPartner,
-  uint256 txI, uint headerI, bool txIsLeft, bool headerIsLeft,
-  bytes txData, bytes headerData, bytes txNodes, bytes headerNodes) public {
+  // address    origin       The address-id of the origin chain
+  // uint256    loc          The index of the headerRoot in question in headerRoots
+  // bytes32[2] partners     Partners for the transaction and header that are leaves
+  //                         of their respective Merkle trees
+  //                         [txPartner, headerPartner]
+  // uint256[2] indices      Indices of the leaf pairs in the respective Merkle
+  //                         trees: [txIndex, headerIndex]
+  // bool[2]    isLeft       Tells us if the tx and header are on the left side
+  //                         at the leaf level. [txIsLeft, headerIsLeft]
+  // bytes      data         Four sets of data. Each set is prefixed with 32 bytes
+  //                         indicating the length of the data.
+  //                         [txData, txNodes, headerData, headerNodes]
+  //
+  //                         tx/header data are the streams that go into forming
+  //                         the transaction hash and header, respectively. These
+  //                         are leaves on the respective trees and are next to
+  //                         their respective partners.
+  //                         tx/header nodes are the corresponding nodes on the
+  //                         respective Merkle trees, starting at the lowest
+  //                         levels. These nodes are bytes32 hashes.
+  function contestHeader(address origin, uint256 loc, bytes32 partners,
+  uint256[2] indices, bool[2] isLeft, bytes data) public {
     bytes32 txHash = Merkle.getTxHash(txData);
     bytes32 txRoot;
     if (txIsLeft == true) {
