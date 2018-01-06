@@ -104,8 +104,35 @@ contract Relay {
   // can actually be different than what exists in the canonical blockchain.
   // We can vastly simplify the block data!
   // TODO: Implement :)
-  function withdraw(address fromChain, uint256 i, bytes data) {
+  function withdraw(address fromChain, uint256 idx, bytes data) {
+    // 1. Transaction proof
+    // First 8 bytes are txTreeDepth
+    uint8 txTreeDepth = getUint16(0, data);
+    uint16 offset = 8;
+    bytes32[txTreeDepth] txProof;
+    // Now fill in the Merkle proof for transactions
+    for (uint16 tx = 0; tx < txTreeDepth; tx++) {
+      // Location of the item in the proof. Offset is 8 bytes
+      uint16 loc = offset + tx * 32;
+      txProof[tx] = getBytes32(loc, data);
+    }
+    offset += (txTreeDepth - 1) * 32;
+    // Do the transaction proof
+    //makeProof(txProof)
 
+    // 2. Form the block header
+    // Block metadata: [prevHash, timestamp(uint256), blockNum, txRoot]
+    // This is a modified block which is meant to be the bare minimum required
+    // for a trustworthy relay.
+    uint[3] block;
+    block[0] = getBytes32(offset, data);
+    block[1] = getUint256(offset + 32, data);
+    block[2] = getUint256(offset + 64, data);
+    // txRoot is the last item in the txProof;
+    offset += 96;
+    bytes32 blockHeader = sha3(block[0], block[1], block[2], txProof[txTreeDepth - 1]);
+
+    // 3. Prove block header root
   }
 
   // ===========================================================================
@@ -128,6 +155,35 @@ contract Relay {
     return true;
   }
 
+  // Get 32 bytes and cast to byes32
+  function getBytes32(uint16 start, bytes data) internal constant
+  returns (bytes32) {
+    bytes newData;
+    for (uint16 i = start; i < start + 32; i++) {
+      newData[i - start] = data[i];
+    }
+    return bytes32(newData);
+  }
+
+  // Get 32 bytes and cast to uint256
+  function getUint256(uint16 start, bytes data) internal constant
+  returns (uint256) {
+    bytes newData;
+    for (uint16 i = start; i < start + 32; i++) {
+      newData[i - start] = data[i];
+    }
+    return uint256(newData);
+  }
+
+  // Get 8 bytes and cast to uint8
+  function getUint16(uint16 start, bytes data) internal constant
+  returns (uint16) {
+    bytes newData;
+    for (uint16 i = start; i < start + 8; i++) {
+      newData[i - start] = data[i];
+    }
+    return uint16(newData);
+  }
 
   function TrustedRelay() {
     admin = msg.sender;
