@@ -6,10 +6,21 @@ library Merkle {
   // [txData, txNodes, headerData, headerNodes]
   // With 32 bytes prefixing each to get the length of the segment.
   function getLeaves(bytes data) public constant returns (bytes32[2]) {
+    // First word is the length
+    uint i = 0;
+    uint txDataL = getUintWord(i, i + 32, data);
 
   }
 
-  function getBytes
+  function getUintWord(uint256 start, uint256 end, bytes data)
+  public constant returns (uint256) {
+
+  }
+
+  function getBytes32Word(uint256 start, uint256 end, bytes data)
+  public constant returns (bytes32) {
+
+  }
 
   // Get the hash of a transaction given the data that went into it.
   function getTxHash() public constant returns (bytes32) {
