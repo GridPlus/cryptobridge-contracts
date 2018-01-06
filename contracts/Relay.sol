@@ -29,7 +29,7 @@ contract Relay {
     uint256 a,
     uint256 b
   }
-  Reward proposalReward;
+  Reward reward;
 
   // Reward for successfully contesting a headerRoot
   uint256 public bountyWei;
@@ -48,6 +48,8 @@ contract Relay {
   // The associatin between address-id and chain-id is stored off-chain but it
   // must be 1:1 and unique.
   mapping(address => bytes32[]) headerRoots;
+  // Timestamp at which the last epoch closed
+  uint256 lastEpochClose;
 
   // Tokens need to be associated between chains. For now, only the admin can
   // create and map tokens on the sidechain to tokens on the main chain
@@ -62,8 +64,13 @@ contract Relay {
   // given origin chain address-id.
   function proposeRoot(bytes32 root, address chain, uint256 start, uint256 end,
   bytes sigs) public onlyProposer() {
+    // Make sure enough validators sign off on the proposed header root
     assert(checkValidators(root, chain, start, end, sigs) == true);
+    // Add the header root
     headerRoots[chain].push(root);
+    // Calculate the reward and issue it
+    uint256 r = reward.base + reward.a * (now - lastEpochClose) + reward.b * reward.b * (now - lastEpochClose);
+    msg.sender.send(r);
     HeaderRoot(chain, start, end, root, headerRoots[origin].length, msg.sender);
   }
 
@@ -104,21 +111,25 @@ contract Relay {
   // can actually be different than what exists in the canonical blockchain.
   // We can vastly simplify the block data!
   // TODO: Implement :)
-  function withdraw(address fromChain, uint256 idx, bytes data) {
+  function withdraw(address fromChain, uint256 idx, bytes32 txHashPlaceholder, bytes data) {
+    // TODO: txHash needs to be proven from data. For now we can just pass it in.
+    // This will prove that a deposit transaction was made from the deposit
+    // function.
+    bytes32 txHash = txHashPlaceHolder;
+
     // 1. Transaction proof
     // First 8 bytes are txTreeDepth
-    uint8 txTreeDepth = getUint16(0, data);
-    uint16 offset = 8;
+    uint16 txTreeDepth = getUint16(0, data);
+    uint16 offset = 16;
     bytes32[txTreeDepth] txProof;
+    txProof[0] = txHash;
     // Now fill in the Merkle proof for transactions
     for (uint16 tx = 0; tx < txTreeDepth; tx++) {
-      // Location of the item in the proof. Offset is 8 bytes
-      uint16 loc = offset + tx * 32;
-      txProof[tx] = getBytes32(loc, data);
+      txProof[tx + 1] = getBytes32(offset + tx * 32, data);
     }
     offset += (txTreeDepth - 1) * 32;
     // Do the transaction proof
-    //makeProof(txProof)
+    //asset(makeProof(txProof) == true);
 
     // 2. Form the block header
     // Block metadata: [prevHash, timestamp(uint256), blockNum, txRoot]
@@ -130,9 +141,22 @@ contract Relay {
     block[2] = getUint256(offset + 64, data);
     // txRoot is the last item in the txProof;
     offset += 96;
-    bytes32 blockHeader = sha3(block[0], block[1], block[2], txProof[txTreeDepth - 1]);
 
     // 3. Prove block header root
+    uint16 headerTreeDepth = getUint16(offset, data);
+    bytes32[headerTreeDepth] headerProof;
+    // First item is the header
+    headerProof[0] = sha3(block[0], block[1], block[2], txProof[txTreeDepth - 1]);
+    uint offset += 16;
+    // Fill the Merkle proof for headers
+    for (uint16 h = 0; h < headerTreeDepth; h++) {
+      headerProof[h + 1] = getBytes32(offset + h * 32, data);
+    }
+    // Do the proof
+    //assert(merkleProof(headerProof) == true);
+
+    // If both proofs succeeded, we can make the withdrawal of tokens!
+
   }
 
   // ===========================================================================
