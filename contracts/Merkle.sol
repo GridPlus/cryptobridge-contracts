@@ -1,5 +1,7 @@
-library Merkle {
+pragma solidity ^0.4.18;
 
+library Merkle {
+/*
   // From a set of input challenge data, this function pulls out the tx and header
   // data and hashes it to get the leaves.
   // Here, the bytes data is grouped as:
@@ -66,7 +68,7 @@ library Merkle {
     }
     // 3. Return the root
     return current;
-  }
+  }*/
 }
 
 
