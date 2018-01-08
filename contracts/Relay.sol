@@ -42,6 +42,11 @@ contract Relay {
   mapping(address => uint256) stakes;
   address[] stakers;
 
+  // Pending withdrawals. The user prepares a withdrawal with tx data and then
+  // releases it with a withdraw. It can be overwritten by the user and gets wiped
+  // upon withdrawal.
+  mapping(address => bytes32) pendingWithdrawals;
+
   // The root of a Merkle tree made of consecutive block headers.
   // These are indexed by the chainId of the Relay contract on the
   // sidechain. This also serves as the identity of the chain itself.
@@ -105,6 +110,25 @@ contract Relay {
     Deposit(msg.sender, toChain, address(this), amount);
   }
 
+
+  // The user who wishes to make a withdrawal sets the transaction here.
+  // This must correspond to `deposit()` on the fromChain
+  // fields = [nonce, gasPrice, gasLimit, value, r, s]
+  // This is a separated function to avoid stack overflows and excessive gas costs
+  function prepWithdraw(address token, address fromChain, uint256 amount,
+  address to, bytes32[6] fields, uint8 v) public {
+    // Form the transaction data. It should be [token, fromChain, amount]
+    bytes memory txData;
+    assembly {
+      txData := add(amount, add(fromChain, add(mload(token), 0x0)))
+    }
+    // Form the txHash. Order determined using ethereumjs-tx:
+    // https://github.com/ethereumjs/ethereumjs-tx/blob/master/index.js#L47
+    bytes32 txHash = keccak256(fields[0], fields[1], fields[2], fromChain, fields[3],
+      txData, v, fields[4], fields[5]);
+    pendingWithdrawals[msg.sender] = txHash;
+  }
+
   // To withdraw a token, the user needs to perform three proofs:
   // 1. Prove that the transaction was included in a transaction Merkle tree
   // 2. Prove that the tx Merkle root went in to forming a block header
@@ -119,25 +143,10 @@ contract Relay {
   // indices = locations within the Merkle tree [ tx, header ]
   // loc = location of the header root
   function withdraw(address fromChain, uint64[2] indices, bytes32 txHash, uint64 loc, bytes data) public {
-    uint64 counter;
+    // 1. Form the transaction header
     // 1. Transaction proof
     // First 8 bytes are txTreeDepth
-    uint64 offset = 8;
-    bytes32[] memory txProof = new bytes32[](MerkleLib.getUint64(0, data));
-    txProof[0] = txHash;
-    // Now fill in the Merkle proof for transactions
-    for (counter = 0; counter < MerkleLib.getUint64(0, data); counter++) {
-      txProof[counter + 1] = MerkleLib.getBytes32(offset + counter * 32, data);
-    }
-    offset += (counter - 1) * 32;
-    // Do the transaction proof
-    assert(
-      MerkleLib.merkleProof(
-        indices[0], txProof[txProof.length - 1],
-        offset,
-        data
-      ) == true
-    );
+    uint64 offset = 8 + txProof(txHash, 8, indices[0], data);
 
     // 2. Form the block header
     // Block metadata: [prevHash, timestamp(uint256), blockNum, txRoot]
@@ -145,42 +154,69 @@ contract Relay {
     // for a trustworthy relay.
 
     // 3. Prove block header root
-    uint64 headerTreeDepth = MerkleLib.getUint64((MerkleLib.getUint64(0, data) - 1) * 32, data);
-    bytes32[] memory headerProof = new bytes32[](headerTreeDepth);
-    // hash(prevHash, timestamp, blockNum, txRoot)
-    headerProof[0] = keccak256(
-      MerkleLib.getBytes32(offset, data),
-      MerkleLib.getBytes32(offset + 32, data),
-      MerkleLib.getBytes32(offset + 64, data),
-      txProof[txProof.length - 1]
-    );
-    offset += 96;
-
-    // Fill the Merkle proof for headers
-    for (counter = 0; counter < MerkleLib.getUint64(0, data); counter++) {
-      headerProof[counter + 1] = MerkleLib.getBytes32(offset + (counter * 32), data);
-    }
-    offset += (counter - 1) * 32;
-    
-    // Do the proof
-    assert(
-      MerkleLib.merkleProof(
-        indices[1],
-        headerRoots[fromChain][loc],
-        offset,
-        data
-      ) == true
-    );
+    offset = headerProof(offset, indices[1], fromChain, loc, data);
 
     // If both proofs succeeded, we can make the withdrawal of tokens!
-    /*HumanStandardToken t = HumanStandardToken(newToken);
-    t.transfer(msg.sender, ;*/
+    /*HumanStandardToken t = HumanStandardToken(newToken);*/
 
   }
 
   // ===========================================================================
   // UTILITY FUNCTIONS
   // ===========================================================================
+
+
+  function txProof(bytes32 txHash, uint64 offset, uint64 index, bytes data)
+  constant returns (uint64) {
+    bytes32[] memory proof = new bytes32[](MerkleLib.getUint64(0, data));
+    proof[0] = txHash;
+    // Now fill in the Merkle proof for transactions
+    for (uint64 t = 0; t < MerkleLib.getUint64(0, data); t++) {
+      proof[t + 1] = MerkleLib.getBytes32(offset + t * 32, data);
+    }
+    offset += (t - 1) * 32;
+    // Do the transaction proof
+    assert(
+      MerkleLib.merkleProof(
+        index,
+        proof[proof.length - 1],
+        offset,
+        data
+      ) == true
+    );
+    return offset;
+  }
+
+  function headerProof(uint64 offset, uint64 index, address fromChain, uint64 loc,
+  bytes data) constant returns (uint64) {
+    uint64 headerTreeDepth = MerkleLib.getUint64(offset, data);
+    bytes32[] memory proof = new bytes32[](headerTreeDepth);
+    // hash(prevHash, timestamp, blockNum, txRoot)
+    proof[0] = keccak256(
+      MerkleLib.getBytes32(offset + 8, data),
+      MerkleLib.getBytes32(offset + 40, data),
+      MerkleLib.getBytes32(offset + 72, data),
+      proof[proof.length - 1]
+    );
+    offset += 104;
+
+    // Fill the Merkle proof for headers
+    for (uint64 h = 0; h < MerkleLib.getUint64(0, data); h++) {
+      proof[h + 1] = MerkleLib.getBytes32(offset + (h * 32), data);
+    }
+    offset += (h - 1) * 32;
+
+    // Do the proof
+    assert(
+      MerkleLib.merkleProof(
+        index,
+        headerRoots[fromChain][loc],
+        offset,
+        data
+      ) == true
+    );
+    return offset;
+  }
 
   // Get the proposer from the randomness.
   // TODO: This should be proportional to the size of stake.
