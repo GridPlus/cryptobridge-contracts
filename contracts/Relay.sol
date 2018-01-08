@@ -16,6 +16,8 @@ contract Relay {
     uint256 indexed end, bytes32 root, uint256 i, address proposer);
   event Deposit(address indexed user, address indexed toChain,
     address indexed token, uint256 amount);
+  event Withdraw(address indexed user, address indexed fromChain,
+    address indexed token, uint256 amount);
   event TokenAdded(address indexed fromChain, address indexed origToken,
     address indexed newToken);
 
@@ -45,7 +47,12 @@ contract Relay {
   // Pending withdrawals. The user prepares a withdrawal with tx data and then
   // releases it with a withdraw. It can be overwritten by the user and gets wiped
   // upon withdrawal.
-  mapping(address => bytes32) pendingWithdrawals;
+  struct Withdrawal {
+    address token;
+    uint256 amount;
+    bytes32 txHash;
+  }
+  mapping(address => Withdrawal) pendingWithdrawals;
 
   // The root of a Merkle tree made of consecutive block headers.
   // These are indexed by the chainId of the Relay contract on the
@@ -116,17 +123,39 @@ contract Relay {
   // fields = [nonce, gasPrice, gasLimit, value, r, s]
   // This is a separated function to avoid stack overflows and excessive gas costs
   function prepWithdraw(address token, address fromChain, uint256 amount,
-  address to, bytes32[6] fields, uint8 v) public {
+  address to, bytes32[6] fields, uint8 v, bytes4 fPrefix) public {
     // Form the transaction data. It should be [token, fromChain, amount]
     bytes memory txData;
+    // Thanks @GNSPS for the assembly!
     assembly {
-      txData := add(amount, add(fromChain, add(mload(token), 0x0)))
+      txData := mload(0x40)
+      // Assign 100 bytes for the data
+      mstore(0x40, add(txData, 0x84))
+
+      mstore(txData, 0x64)
+      txData := add(txData, 0x20)
+
+      mstore(txData, mload(fPrefix))
+      txData := add(txData, 4)
+
+      txData := add(txData, mload(amount))
+      txData := add(txData, 0x20)
+
+      txData := add(txData, mload(fromChain))
+      txData := add(txData, 0x20)
+
+      txData := add(txData, mload(token))
+      txData := add(txData, 0x20)
     }
     // Form the txHash. Order determined using ethereumjs-tx:
     // https://github.com/ethereumjs/ethereumjs-tx/blob/master/index.js#L47
     bytes32 txHash = keccak256(fields[0], fields[1], fields[2], fromChain, fields[3],
       txData, v, fields[4], fields[5]);
-    pendingWithdrawals[msg.sender] = txHash;
+    Withdrawal memory w;
+    w.txHash = txHash;
+    w.token = token;
+    w.amount = amount;
+    pendingWithdrawals[msg.sender] = w;
   }
 
   // To withdraw a token, the user needs to perform three proofs:
@@ -143,10 +172,10 @@ contract Relay {
   // indices = locations within the Merkle tree [ tx, header ]
   // loc = location of the header root
   function withdraw(address fromChain, uint64[2] indices, bytes32 txHash, uint64 loc, bytes data) public {
-    // 1. Form the transaction header
     // 1. Transaction proof
     // First 8 bytes are txTreeDepth
-    uint64 offset = 8 + txProof(txHash, 8, indices[0], data);
+    Withdrawal memory w = pendingWithdrawals[msg.sender];
+    uint64 offset = 8 + txProof(w.txHash, 8, indices[0], data);
 
     // 2. Form the block header
     // Block metadata: [prevHash, timestamp(uint256), blockNum, txRoot]
@@ -157,8 +186,10 @@ contract Relay {
     offset = headerProof(offset, indices[1], fromChain, loc, data);
 
     // If both proofs succeeded, we can make the withdrawal of tokens!
-    /*HumanStandardToken t = HumanStandardToken(newToken);*/
-
+    HumanStandardToken t = HumanStandardToken(w.token);
+    t.transfer(msg.sender, w.amount);
+    Withdraw(msg.sender, fromChain, w.token, w.amount);
+    delete pendingWithdrawals[msg.sender];
   }
 
   // ===========================================================================
