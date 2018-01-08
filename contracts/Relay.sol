@@ -114,7 +114,7 @@ contract Relay {
   function proposeRoot(bytes32 root, address chainId, uint256 start, uint256 end,
   bytes sigs) public {
     // Make sure enough validators sign off on the proposed header root
-    assert(checkValidators(root, chainId, start, end, sigs) == true);
+    assert(checkSignatures(root, chainId, start, end, sigs) == true);
     // Add the header root
     headerRoots[chainId].push(root);
     // Calculate the reward and issue it
@@ -229,12 +229,7 @@ contract Relay {
     Withdrawal memory w = pendingWithdrawals[msg.sender];
     uint64 offset = 8 + txProof(w.txHash, 8, indices[0], data);
 
-    // 2. Form the block header
-    // Block metadata: [prevHash, timestamp(uint256), blockNum, txRoot]
-    // This is a modified block which is meant to be the bare minimum required
-    // for a trustworthy relay.
-
-    // 3. Prove block header root
+    // 2. Prove block header root
     offset = headerProof(offset, indices[1], fromChain, loc, data);
 
     // If both proofs succeeded, we can make the withdrawal of tokens!
@@ -250,7 +245,7 @@ contract Relay {
 
 
   function txProof(bytes32 txHash, uint64 offset, uint64 index, bytes data)
-  constant returns (uint64) {
+  internal constant returns (uint64) {
     bytes32[] memory proof = new bytes32[](MerkleLib.getUint64(0, data));
     proof[0] = txHash;
     // Now fill in the Merkle proof for transactions
@@ -271,9 +266,10 @@ contract Relay {
   }
 
   function headerProof(uint64 offset, uint64 index, address fromChain, uint64 loc,
-  bytes data) constant returns (uint64) {
+  bytes data) internal constant returns (uint64) {
     uint64 headerTreeDepth = MerkleLib.getUint64(offset, data);
     bytes32[] memory proof = new bytes32[](headerTreeDepth);
+    // Form the block header we are trying to prove
     // hash(prevHash, timestamp, blockNum, txRoot)
     proof[0] = keccak256(
       MerkleLib.getBytes32(offset + 8, data),
@@ -305,7 +301,7 @@ contract Relay {
   // signatures (>= validatorThreshold), return true
   // NOTE: For the first version, any staker will work. For the future, we should
   // select a subset of validators from the staker pool.
-  function checkValidators(bytes32 root, address chain, uint256 start, uint256 end,
+  function checkSignatures(bytes32 root, address chain, uint256 start, uint256 end,
   bytes sigs) internal returns (bool) {
     bytes32 h = keccak256(root, chain, start, end);
     address valTmp;
@@ -318,8 +314,9 @@ contract Relay {
         MerkleLib.getBytes32(i * 65, sigs),
         MerkleLib.getBytes32(i * 65 + 32, sigs)
       );
-      // Make sure this address is a staker
+      // Make sure this address is a staker and NOT the proposer
       assert(stakers[valTmp] != 0);
+      assert(valTmp != getProposer());
       // Unfortunately we need to loop through the cache to make sure there are
       // no signature duplicates. This is the most efficient way to do it since
       // storage costs too much.
