@@ -1,6 +1,6 @@
 pragma solidity ^0.4.18;
 
-/*import "./Merkle.sol";*/
+import "./MerkleLib.sol";
 import "tokens/Token.sol";  // truffle package (install with `truffle install tokens`)
 import "tokens/HumanStandardToken.sol";
 
@@ -22,14 +22,14 @@ contract Relay {
   // Admin has the ability to add tokens to the relay
   address admin;
 
-  // The reward function, which is of form (reward = base + a*t + b*t^2)
-  // where t is measured in seconds since the last epoch
+  // The reward function, which is of form (reward = base + a*n)
+  // where n is the number of blocks proposed in the header (end-start)
   struct Reward {
     uint256 base;
     uint256 a;
-    uint256 b;
   }
   Reward reward;
+  uint256 maxReward;
 
   // Reward for successfully contesting a headerRoot
   uint256 public bountyWei;
@@ -48,8 +48,6 @@ contract Relay {
   // The associatin between address-id and chain-id is stored off-chain but it
   // must be 1:1 and unique.
   mapping(address => bytes32[]) headerRoots;
-  // Timestamp at which the last epoch closed
-  uint256 lastEpochClose;
 
   // Tokens need to be associated between chains. For now, only the admin can
   // create and map tokens on the sidechain to tokens on the main chain
@@ -63,14 +61,21 @@ contract Relay {
   // Save a hash to an append-only array of headerRoots associated with the
   // given origin chain address-id.
   function proposeRoot(bytes32 root, address chainId, uint256 start, uint256 end,
-  bytes sigs) public onlyProposer() {
+  bytes sigs) public {
     // Make sure enough validators sign off on the proposed header root
     assert(checkValidators(root, chainId, start, end, sigs) == true);
     // Add the header root
     headerRoots[chainId].push(root);
     // Calculate the reward and issue it
-    uint256 r = reward.base + reward.a * (now - lastEpochClose) + reward.b * reward.b * (now - lastEpochClose);
+    uint256 r = reward.base + reward.a * (end - start);
+    // If we exceed the max reward, anyone can propose the header root
+    if (r > maxReward) {
+      r = maxReward;
+    } else {
+      assert(msg.sender == getProposer());
+    }
     msg.sender.transfer(r);
+    epochSeed = block.blockhash(block.number);
     HeaderRoot(chainId, start, end, root, headerRoots[chainId].length, msg.sender);
   }
 
@@ -110,51 +115,66 @@ contract Relay {
   // Note: Because the history is based on social consensus, the block headers
   // can actually be different than what exists in the canonical blockchain.
   // We can vastly simplify the block data!
-  // TODO: Implement :)
-  function withdraw(address fromChain, uint256 idx, bytes32 txHashPlaceHolder, bytes data) public {
-    // TODO: txHash needs to be proven from data. For now we can just pass it in.
-    // This will prove that a deposit transaction was made from the deposit
-    // function.
-    bytes32 txHash = txHashPlaceHolder;
-
+  //
+  // indices = locations within the Merkle tree [ tx, header ]
+  // loc = location of the header root
+  function withdraw(address fromChain, uint64[2] indices, bytes32 txHash, uint64 loc, bytes data) public {
+    uint64 counter;
     // 1. Transaction proof
     // First 8 bytes are txTreeDepth
-    uint64 txTreeDepth = getUint64(0, data);
-    uint64 offset = 16;
-    bytes32[] memory txProof = new bytes32[](txTreeDepth);
+    uint64 offset = 8;
+    bytes32[] memory txProof = new bytes32[](MerkleLib.getUint64(0, data));
     txProof[0] = txHash;
     // Now fill in the Merkle proof for transactions
-    for (uint64 tx = 0; tx < txTreeDepth; tx++) {
-      txProof[tx + 1] = getBytes32(offset + tx * 32, data);
+    for (counter = 0; counter < MerkleLib.getUint64(0, data); counter++) {
+      txProof[counter + 1] = MerkleLib.getBytes32(offset + counter * 32, data);
     }
-    offset += (txTreeDepth - 1) * 32;
+    offset += (counter - 1) * 32;
     // Do the transaction proof
-    //asset(makeProof(txProof) == true);
+    assert(
+      MerkleLib.merkleProof(
+        indices[0], txProof[txProof.length - 1],
+        offset,
+        data
+      ) == true
+    );
 
     // 2. Form the block header
     // Block metadata: [prevHash, timestamp(uint256), blockNum, txRoot]
     // This is a modified block which is meant to be the bare minimum required
     // for a trustworthy relay.
-    bytes32 prevHash = getBytes32(offset, data);
-    uint256 timestamp = getUint256(offset + 32, data);
-    uint256 blockNum = getUint256(offset + 64, data);
-    // txRoot is the last item in the txProof;
-    offset += 96;
 
     // 3. Prove block header root
-    uint64 headerTreeDepth = getUint64(offset, data);
+    uint64 headerTreeDepth = MerkleLib.getUint64((MerkleLib.getUint64(0, data) - 1) * 32, data);
     bytes32[] memory headerProof = new bytes32[](headerTreeDepth);
-    // First item is the header
-    headerProof[0] = keccak256(prevHash, timestamp, blockNum, txProof[txTreeDepth - 1]);
-    offset += 16;
+    // hash(prevHash, timestamp, blockNum, txRoot)
+    headerProof[0] = keccak256(
+      MerkleLib.getBytes32(offset, data),
+      MerkleLib.getBytes32(offset + 32, data),
+      MerkleLib.getBytes32(offset + 64, data),
+      txProof[txProof.length - 1]
+    );
+    offset += 96;
+
     // Fill the Merkle proof for headers
-    for (uint64 h = 0; h < headerTreeDepth; h++) {
-      headerProof[h + 1] = getBytes32(offset + h * 32, data);
+    for (counter = 0; counter < MerkleLib.getUint64(0, data); counter++) {
+      headerProof[counter + 1] = MerkleLib.getBytes32(offset + (counter * 32), data);
     }
+    offset += (counter - 1) * 32;
+    
     // Do the proof
-    //assert(merkleProof(headerProof) == true);
+    assert(
+      MerkleLib.merkleProof(
+        indices[1],
+        headerRoots[fromChain][loc],
+        offset,
+        data
+      ) == true
+    );
 
     // If both proofs succeeded, we can make the withdrawal of tokens!
+    /*HumanStandardToken t = HumanStandardToken(newToken);
+    t.transfer(msg.sender, ;*/
 
   }
 
@@ -178,36 +198,8 @@ contract Relay {
     return true;
   }
 
-  // Get 32 bytes and cast to byes32
-  function getBytes32(uint64 start, bytes data) pure returns (bytes32) {
-    bytes32[1] memory newData;
-    assembly {
-      mstore(newData, mload(add(start, add(data, 0x32))))
-    }
-    return newData[0];
-  }
-
-  // Get 32 bytes and cast to uint256
-  function getUint256(uint64 start, bytes data) pure returns (uint256) {
-    uint256[1] memory newData;
-    assembly {
-      mstore(newData, mload(add(start, add(data, 0x32))))
-    }
-    return newData[0];
-  }
-
-  // Get 8 bytes and cast to uint64
-  function getUint64(uint64 start, bytes data) pure returns (uint64) {
-    return uint64(getUint256(start, data));
-  }
-
   function TrustedRelay() {
     admin = msg.sender;
-  }
-
-  modifier onlyProposer() {
-    require(msg.sender == getProposer());
-    _;
   }
 
   modifier onlyAdmin() {
