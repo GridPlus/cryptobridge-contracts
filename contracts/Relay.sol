@@ -41,8 +41,15 @@ contract Relay {
   bytes32 epochSeed = block.blockhash(block.number);
 
   // Global pool of stakers - indexed by address leading to stake size
-  mapping(address => uint256) stakes;
-  address[] stakers;
+  struct Stake {
+    uint256 amount;
+    address staker;
+  }
+  mapping(address => uint64) stakers;
+  Stake[] stakes;
+  uint256 stakeSum;
+  address stakeToken;
+  uint64 validatorThreshold = 0;
 
   // Pending withdrawals. The user prepares a withdrawal with tx data and then
   // releases it with a withdraw. It can be overwritten by the user and gets wiped
@@ -67,8 +74,40 @@ contract Relay {
   mapping(address => mapping(address => address)) tokens;
 
   // ===========================================================================
-  // STATE UPDATING FUNCTIONS
+  // STAKER FUNCTIONS
   // ===========================================================================
+
+  // Stake a specified quantity of the staking token
+  function stake(uint256 amount) public {
+    HumanStandardToken t = HumanStandardToken(stakeToken);
+    t.transferFrom(msg.sender, address(this), amount);
+    // We can't have a 0-length stakes array
+    if (stakes.length == 0) { stakes.push(s); }
+    if (stakers[msg.sender] == 0) {
+      // If the staker is new
+      Stake memory s;
+      s.amount = amount;
+      s.staker = msg.sender;
+      stakes.push(s);
+    } else {
+      // Otherwise we can just add to the stake
+      stakes[stakers[msg.sender]].amount += amount;
+    }
+    stakeSum += amount;
+  }
+
+  // Remove stake
+  function destake(uint256 amount) public {
+    assert(stakers[msg.sender] != 0);
+    assert(amount >= stakes[stakers[msg.sender]].amount);
+    stakes[stakers[msg.sender]].amount -= amount;
+    stakeSum -= amount;
+    HumanStandardToken t = HumanStandardToken(stakeToken);
+    t.transferFrom(address(this), msg.sender, amount);
+    if (stakes[stakers[msg.sender]].amount == 0) {
+      delete stakes[stakers[msg.sender]];
+    }
+  }
 
   // Save a hash to an append-only array of headerRoots associated with the
   // given origin chain address-id.
@@ -91,6 +130,10 @@ contract Relay {
     HeaderRoot(chainId, start, end, root, headerRoots[chainId].length, msg.sender);
   }
 
+  // ===========================================================================
+  // ADMIN FUNCTIONS
+  // ===========================================================================
+
   // Map a token (or ether) to a token on the original chain
   function addToken(address newToken, address origToken, address fromChain)
   public payable onlyAdmin() {
@@ -106,6 +149,15 @@ contract Relay {
     }
     TokenAdded(fromChain, origToken, newToken);
   }
+
+  // Change the number of validators required to allow a passed header root
+  function updateValidatorThreshold(uint64 newThreshold) public onlyAdmin() {
+    validatorThreshold = newThreshold;
+  }
+
+  // ===========================================================================
+  // USER FUNCTIONS
+  // ===========================================================================
 
   // Any user may make a deposit bound for a particular chainId (address of
   // relay on the destination chain).
@@ -123,7 +175,7 @@ contract Relay {
   // fields = [nonce, gasPrice, gasLimit, value, r, s]
   // This is a separated function to avoid stack overflows and excessive gas costs
   function prepWithdraw(address token, address fromChain, uint256 amount,
-  address to, bytes32[6] fields, uint8 v, bytes4 fPrefix) public {
+  bytes32[6] fields, uint8 v, bytes4 fPrefix) public {
     // Form the transaction data. It should be [token, fromChain, amount]
     bytes memory txData;
     // Thanks @GNSPS for the assembly!
@@ -171,7 +223,7 @@ contract Relay {
   //
   // indices = locations within the Merkle tree [ tx, header ]
   // loc = location of the header root
-  function withdraw(address fromChain, uint64[2] indices, bytes32 txHash, uint64 loc, bytes data) public {
+  function withdraw(address fromChain, uint64[2] indices, uint64 loc, bytes data) public {
     // 1. Transaction proof
     // First 8 bytes are txTreeDepth
     Withdrawal memory w = pendingWithdrawals[msg.sender];
@@ -249,24 +301,58 @@ contract Relay {
     return offset;
   }
 
-  // Get the proposer from the randomness.
-  // TODO: This should be proportional to the size of stake.
-  function getProposer() internal constant returns (address) {
-    uint256 i = uint256(epochSeed);
+  // Check a series of signatures against staker addresses. If there are enough
+  // signatures (>= validatorThreshold), return true
+  // NOTE: For the first version, any staker will work. For the future, we should
+  // select a subset of validators from the staker pool.
+  function checkValidators(bytes32 root, address chain, uint256 start, uint256 end,
+  bytes sigs) internal returns (bool) {
+    bytes32 h = keccak256(root, chain, start, end);
+    address valTmp;
+    address[] passing;
+    // signs are chunked in 65 bytes -> [r, s, v]
+    for (uint64 i = 0; i < sigs.length / 65; i ++) {
+      valTmp = ecrecover(
+        h,
+        uint8(sigs[i * 65 + 64]),
+        MerkleLib.getBytes32(i * 65, sigs),
+        MerkleLib.getBytes32(i * 65 + 32, sigs)
+      );
+      // Make sure this address is a staker
+      assert(stakers[valTmp] != 0);
+      // Unfortunately we need to loop through the cache to make sure there are
+      // no signature duplicates. This is the most efficient way to do it since
+      // storage costs too much.
+      for (uint j = 0; j < passing.length; j ++) {
+        assert(passing[j] != valTmp);
+      }
+      passing.push(valTmp);
+    }
+    return passing.length >= validatorThreshold;
+  }
+
+  // Sample a proposer. Likelihood of being chosen is proportional to stake size.
+  // NOTE: This is just a first pass. This will bias earlier stakers
+  // and should be fixed to be made more fair
+  function getProposer() public constant returns (address) {
+    // Convert the seed to an index
+    uint256 target = uint256(epochSeed) % stakeSum;
+    // Index of stakes
+    uint64 i = 0;
+    // Total stake
+    uint256 sum = 0;
+    while (sum < target) {
+      sum += stakes[i].amount;
+      i += 1;
+    }
+    // Winner winner chicken dinner
     return stakers[i];
   }
 
-  // Check the signatures to see if the hash matches up in at least the requisite
-  // number of signatures (2/3 by default)
-  // TODO: implement :)
-  function checkValidators(bytes32 root, address chain, uint256 start, uint256 end,
-  bytes sigs) internal pure returns (bool) {
-    bytes32 h = keccak256(root, chain, start, end);
-    return true;
-  }
-
-  function TrustedRelay() {
+  // Staking token can only be set at instantiation!
+  function TrustedRelay(address token) {
     admin = msg.sender;
+    stakeToken = token;
   }
 
   modifier onlyAdmin() {
