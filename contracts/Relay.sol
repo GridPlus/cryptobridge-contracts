@@ -357,4 +357,6 @@ contract Relay {
     _;
   }
 
+  function() public payable {}
+
 }

@@ -6,38 +6,47 @@ const sha3 = require('solidity-sha3').default;
 const util = require('ethereumjs-util');
 const truffleConf = require('../truffle.js').networks;
 const Web3 = require('web3');
-const provider = `http://${truffleConf.development.host}:${truffleConf.development.port}`;
-const web3 = new Web3(new Web3.providers.HttpProvider(provider));
+
+const Token = artifacts.require('HumanStandardToken.sol'); // EPM package
+const Relay = artifacts.require('./Relay');
+
+// Need two of these
+const providerA = `http://${truffleConf.development.host}:${truffleConf.development.port}`;
+const web3A = new Web3(new Web3.providers.HttpProvider(providerA));
+const providerB = `http://${truffleConf.developmentB.host}:${truffleConf.developmentB.port}`;
+const web3B = new Web3(new Web3.providers.HttpProvider(providerB));
+
+// Global variables (will be references throughout the tests)
+let stakingToken;
+let tokenA;
+let tokenB;
+let relayA;
+let relayB;
 
 contract('Relay', (accounts) => {
   assert(accounts.length > 0);
 
   describe('Admin: Relay setup', () => {
-    it('Should create a token on chain A', async () => {
-
+    it('Should create a token on chain A and give it out to accounts 1-3', async () => {
+      stakingToken = await Token.new(1000, 'Staking', 0, 'STK', { from: accounts[0] });
+      await stakingToken.transfer(accounts[1], 100);
+      await stakingToken.transfer(accounts[2], 100);
+      await stakingToken.transfer(accounts[3], 100);
     });
 
-    it('Should create the relay with the token as the stkaing token', async () => {
-
+    it('Should create the relay with the token as the staking token', async () => {
+      relayA = await Relay.new(stakingToken.address, { from: accounts[0] });
     });
 
     it('Should give a small amount of ether to the relay', async () => {
-
+      await web3A.eth.sendTransaction({
+        to: relayA.address,
+        value: 10 ** 17,
+        from: accounts[0]
+      });
     });
 
     it('Should set the reward parameters of the relay', async () => {
-
-    });
-
-    it('Should give tokens to accounts[1]', async () => {
-
-    });
-
-    it('Should give tokens to accounts[2]', async () => {
-
-    });
-
-    it('Should give tokens to accounts[3]', async () => {
 
     });
 

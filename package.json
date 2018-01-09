@@ -25,6 +25,9 @@
   },
   "homepage": "https://github.com/alex-miller-0/trustless-relay#readme",
   "dependencies": {
-    "truffle-hdwallet-provider": "0.0.3"
+    "left-pad": "^1.2.0",
+    "solidity-sha3": "^0.4.1",
+    "truffle-hdwallet-provider": "0.0.3",
+    "web3": "^1.0.0-beta.27"
   }
 }
