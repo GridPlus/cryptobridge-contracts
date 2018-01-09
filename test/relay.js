@@ -36,6 +36,8 @@ contract('Relay', (accounts) => {
 
     it('Should create the relay with the token as the staking token', async () => {
       relayA = await Relay.new(stakingToken.address, { from: accounts[0] });
+      const admin = await relayA.admin();
+      assert(admin == accounts[0]);
     });
 
     it('Should give a small amount of ether to the relay', async () => {
@@ -47,7 +49,10 @@ contract('Relay', (accounts) => {
     });
 
     it('Should set the reward parameters of the relay', async () => {
-
+      const BASE = 10 ** 16;
+      await relayA.updateReward(BASE, 0, BASE, { from: accounts[0] });
+      const maxReward = await relayA.maxReward();
+      assert(maxReward == BASE);
     });
 
     it('Should stake via accounts[1]', async () => {

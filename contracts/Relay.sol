@@ -22,7 +22,7 @@ contract Relay {
     address indexed newToken);
 
   // Admin has the ability to add tokens to the relay
-  address admin;
+  address public admin;
 
   // The reward function, which is of form (reward = base + a*n)
   // where n is the number of blocks proposed in the header (end-start)
@@ -31,7 +31,7 @@ contract Relay {
     uint256 a;
   }
   Reward reward;
-  uint256 maxReward;
+  uint256 public maxReward;
 
   // Reward for successfully contesting a headerRoot
   uint256 public bountyWei;
@@ -153,6 +153,15 @@ contract Relay {
   // Change the number of validators required to allow a passed header root
   function updateValidatorThreshold(uint64 newThreshold) public onlyAdmin() {
     validatorThreshold = newThreshold;
+  }
+
+  // The admin can update the reward at any time.
+  // TODO: We may want to block this during the current epoch, which would require
+  // we keep a "reward cache" of some kind.
+  function updateReward(uint256 base, uint256 a, uint256 max) public {
+    reward.base = base;
+    reward.a = a;
+    maxReward = max;
   }
 
   // ===========================================================================
@@ -347,7 +356,7 @@ contract Relay {
   }
 
   // Staking token can only be set at instantiation!
-  function TrustedRelay(address token) {
+  function Relay(address token) {
     admin = msg.sender;
     stakeToken = token;
   }
