@@ -16,12 +16,23 @@ const web3A = new Web3(new Web3.providers.HttpProvider(providerA));
 const providerB = `http://${truffleConf.developmentB.host}:${truffleConf.developmentB.port}`;
 const web3B = new Web3(new Web3.providers.HttpProvider(providerB));
 
+// ABI and bytes for interacting with web3B
+const relayABI = require('../build/contracts/Relay.json').abi;
+const relayBytes = require('../build/contracts/Relay.json').bytecode;
+const tokenABI = require('../build/contracts/HumanStandardToken.json').abi;
+const tokenBytes = require('../build/contracts/HumanStandardToken.json').bytecode;
+const merkleLibBytes = require('../build/contracts/MerkleLib.json').bytecode;
+
 // Global variables (will be references throughout the tests)
 let stakingToken;
 let tokenA;
 let tokenB;
 let relayA;
 let relayB;
+let merkleLibBAddr;
+
+// Parameters that can be changed throughout the process
+let proposer;
 
 contract('Relay', (accounts) => {
   assert(accounts.length > 0);
@@ -56,23 +67,57 @@ contract('Relay', (accounts) => {
     });
 
     it('Should stake via accounts[1]', async () => {
-
+      await stakingToken.approve(relayA.address, 1, { from: accounts[1] });
+      await relayA.stake(1, { from: accounts[1] });
+      const stakeSumTmp = await relayA.stakeSum();
+      assert(parseInt(stakeSumTmp) === 1);
     });
 
     it('Should stake via accounts[2]', async () => {
-
+      await stakingToken.approve(relayA.address, 10, { from: accounts[2] });
+      await relayA.stake(10, { from: accounts[2] });
+      const stakeSumTmp = await relayA.stakeSum();
+      assert(parseInt(stakeSumTmp) === 11);
     });
 
     it('Should stake via accounts[3]', async () => {
-
+      await stakingToken.approve(relayA.address, 100, { from: accounts[3] });
+      await relayA.stake(100, { from: accounts[3] });
+      const stakeSumTmp = await relayA.stakeSum();
+      assert(parseInt(stakeSumTmp) === 111);
     });
+
+    it('Should destake a small amount from accounts[3]', async () => {
+      await relayA.destake(1, { from: accounts[3] });
+      const stakeSumTmp = await relayA.stakeSum();
+      assert(parseInt(stakeSumTmp) === 110);
+    })
 
     it('Should get the proposer and make sure it is a staker', async () => {
-
+      const seed = await relayA.epochSeed();
+      let stakeSum = await relayA.stakeSum();
+      stakeSum = parseInt(stakeSum);
+      proposer = await relayA.getProposer();
+      assert(proposer === accounts[1] || proposer === accounts[2] || proposer === accounts[3]);
     });
 
-    it('Should create a relay on chain B', async () => {
-
+    it('Should deploy MerkleLib and use it to deploy a relay on chain B', async () => {
+      // Deploy the library
+      const libReceipt = await web3B.eth.sendTransaction({
+        from: accounts[0],
+        data: merkleLibBytes,
+        gas: 3000000,
+      });
+      merkleLibBAddr = libReceipt.contractAddress.slice(2).toLowerCase();
+      const relayBytesB = relayBytes.replace(/_+MerkleLib_+/g, merkleLibBAddr);
+      const receipt = await web3B.eth.sendTransaction({
+        from: accounts[0],
+        data: relayBytesB,
+        gas: 7000000,
+      });
+      assert(receipt.blockNumber >= 0);
+      relayB = await new web3B.eth.Contract(relayABI, receipt.contractAddress);
+      assert(receipt.contractAddress === relayB.options.address);
     });
   });
 

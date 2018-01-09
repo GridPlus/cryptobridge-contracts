@@ -38,7 +38,7 @@ contract Relay {
 
   // The randomness seed of the epoch. This is used to determine the proposer
   // and the validator pool
-  bytes32 epochSeed = block.blockhash(block.number);
+  bytes32 public epochSeed = block.blockhash(block.number-1);
 
   // Global pool of stakers - indexed by address leading to stake size
   struct Stake {
@@ -47,7 +47,7 @@ contract Relay {
   }
   mapping(address => uint64) stakers;
   Stake[] stakes;
-  uint256 stakeSum;
+  uint256 public stakeSum;
   address stakeToken;
   uint64 validatorThreshold = 0;
 
@@ -89,6 +89,7 @@ contract Relay {
       s.amount = amount;
       s.staker = msg.sender;
       stakes.push(s);
+      stakers[msg.sender] = uint64(stakes.length) - 1;
     } else {
       // Otherwise we can just add to the stake
       stakes[stakers[msg.sender]].amount += amount;
@@ -99,11 +100,11 @@ contract Relay {
   // Remove stake
   function destake(uint256 amount) public {
     assert(stakers[msg.sender] != 0);
-    assert(amount >= stakes[stakers[msg.sender]].amount);
+    assert(amount <= stakes[stakers[msg.sender]].amount);
     stakes[stakers[msg.sender]].amount -= amount;
     stakeSum -= amount;
     HumanStandardToken t = HumanStandardToken(stakeToken);
-    t.transferFrom(address(this), msg.sender, amount);
+    t.transfer(msg.sender, amount);
     if (stakes[stakers[msg.sender]].amount == 0) {
       delete stakes[stakers[msg.sender]];
     }
@@ -344,7 +345,7 @@ contract Relay {
     // Convert the seed to an index
     uint256 target = uint256(epochSeed) % stakeSum;
     // Index of stakes
-    uint64 i = 0;
+    uint64 i = 1;
     // Total stake
     uint256 sum = 0;
     while (sum < target) {
@@ -352,7 +353,7 @@ contract Relay {
       i += 1;
     }
     // Winner winner chicken dinner
-    return stakers[i];
+    return stakes[i - 1].staker;
   }
 
   // Staking token can only be set at instantiation!

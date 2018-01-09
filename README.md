@@ -27,3 +27,12 @@ Finally, you need to install the `tokens` package:
 ```
 truffle install tokens
 ```
+
+## Testing
+
+In order to run the tests, you need to have two Ethereum clients running and specified in `truffle.js` (default on ports `7545` and `8545`).
+
+```
+truffle compile
+truffle test
+```
