@@ -36,6 +36,9 @@ let proposer;
 
 contract('Relay', (accounts) => {
   assert(accounts.length > 0);
+  function isEVMException(err) {
+    return err.toString().includes('VM Exception');
+  }
 
   describe('Admin: Relay setup', () => {
     it('Should create a token on chain A and give it out to accounts 1-3', async () => {
@@ -118,28 +121,52 @@ contract('Relay', (accounts) => {
       assert(receipt.blockNumber >= 0);
       relayB = await new web3B.eth.Contract(relayABI, receipt.contractAddress);
       assert(receipt.contractAddress === relayB.options.address);
+      relayB.setProvider(providerB);
     });
   });
 
   describe('Admin: Token mapping', () => {
     it('Should create a new token (token B) on chain B', async () => {
-
+      const tokenBTmp = await new web3B.eth.Contract(tokenABI);
+      await tokenBTmp.deploy({
+        data: tokenBytes,
+        arguments: [1000, 'TokenB', 0, 'TKB']
+      })
+      .send({ from: accounts[0], gas: 3000000 })
+      .then((tkb) => {
+        tokenB = tkb;
+        assert(tkb.options.address != null);
+        tokenB.setProvider(providerB);
+      })
     });
 
     it('Should create a new token (token A) on chain A', async () => {
+      tokenA = await Token.new(1000, 'TokenA', 0, 'TKA', { from: accounts[0] });
+    });
 
+    it('Should fail to map tokenB because it has not been given allowance', async () => {
+      try {
+        await relayA.addToken(tokenA.address, tokenB.options.address, relayB.options.address)
+      } catch (err) {
+        assert(isEVMException(err) === true);
+      }
     });
 
     it('Should map token on chain A to the one on chain B', async () => {
-
+      await tokenA.approve(relayA.address, 1000);
+      await relayA.addToken(tokenA.address, tokenB.options.address, relayB.options.address)
     });
 
     it('Should ensure the relay on chain A has all of the mapped token', async () => {
-
+      const supply = await tokenA.totalSupply();
+      const held = await tokenA.balanceOf(relayA.address);
+      assert(parseInt(supply) === parseInt(held));
     });
 
     it('Should give 5 token B to accounts[1]', async () => {
-
+      await tokenB.methods.transfer(accounts[1], 5).send({ from: accounts[0] })
+      const balance = await tokenB.methods.balanceOf(accounts[1]).call();
+      assert(parseInt(balance) === 5);
     });
   });
 
