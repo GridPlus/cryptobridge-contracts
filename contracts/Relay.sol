@@ -1,6 +1,6 @@
 pragma solidity ^0.4.18;
 
-import "./MerkleLib.sol";
+import "./MerklePatriciaProof.sol";
 import "tokens/Token.sol";  // truffle package (install with `truffle install tokens`)
 import "tokens/HumanStandardToken.sol";
 
@@ -60,7 +60,7 @@ contract Relay {
   struct Withdrawal {
     address token;
     uint256 amount;
-    bytes32 txHash;
+    bytes32 txRoot;
   }
   mapping(address => Withdrawal) pendingWithdrawals;
 
@@ -193,41 +193,60 @@ contract Relay {
 
   // The user who wishes to make a withdrawal sets the transaction here.
   // This must correspond to `deposit()` on the fromChain
-  // fields = [nonce, gasPrice, gasLimit, value, r, s]
-  // This is a separated function to avoid stack overflows and excessive gas costs
-  function prepWithdraw(address token, address fromChain, uint256 amount,
-  bytes32[6] fields, uint8 v, bytes4 fPrefix) public {
+  // The txRoot can be passed in, but it needs to be correct for the second part
+  // of this process where the user proves the transaction root goes in the
+  // block header.
+  //
+  // addrs = [token, fromChain]
+  // txParams (bytes) = [ nonce (32), gasPrice (32), gasLimit (32), value (32), r (32), s (32) ]
+  function prepWithdraw(address[2] addrs, uint256 amount,
+  uint8 v, bytes32 txRoot, bytes txParams, bytes path, bytes parentNodes) public {
     // Form the transaction data. It should be [token, fromChain, amount]
     bytes memory txData;
-    // Thanks @GNSPS for the assembly!
+    bytes memory tx;
+    // Form the raw transaction as a bytes array using the first 100 bytes of the data
     assembly {
+      tx := mload(0x40)
+      // ==> nonce
+      /*mstore(tx, mload(add(txParams, 0x0)))
+      // ==> gasPrice
+      tx := mstore(0x20, mload(add(txParams, 0x20)))
+      // ==> gasLimit
+      tx := mstore(0x40, mload(add(txParams, 0x40)))
+      // ==> to
+      tx := mstore(0x60, mload(addrs[1]))
+      // ==> value
+      tx := mstore(0x80, mload(add(txParams, 0x60)))
+      // ==> data
+      // Thanks @GNSPS for the txData piece
       txData := mload(0x40)
-      // Assign 100 bytes for the data
+      // Assign 100 bytes for the txParams
       mstore(0x40, add(txData, 0x84))
-
       mstore(txData, 0x64)
       txData := add(txData, 0x20)
-
-      mstore(txData, mload(fPrefix))
+      // keccak256(deposit(address,address,uint256))[:8] = 0x8340f549
+      mstore(txData, mload(0x8340f549))
       txData := add(txData, 4)
-
       txData := add(txData, mload(amount))
       txData := add(txData, 0x20)
-
-      txData := add(txData, mload(fromChain))
+      txData := add(txData, mload(addrs[1]))
       txData := add(txData, 0x20)
-
-      txData := add(txData, mload(token))
+      txData := add(txData, mload(addrs[0]))
       txData := add(txData, 0x20)
+      let L := mload(txData)
+      // ==> r
+      tx := mstore(0x80 + L, mload(add(txParams, 0x80)))
+      // ==> s
+      tx := mstore(0x100 + L, mload(add(txParams, 0x100)))*/
     }
-    // Form the txHash. Order determined using ethereumjs-tx:
-    // https://github.com/ethereumjs/ethereumjs-tx/blob/master/index.js#L47
-    bytes32 txHash = keccak256(fields[0], fields[1], fields[2], fromChain, fields[3],
-      txData, v, fields[4], fields[5]);
+
+    // Make sure this transaction is the value on the path via a MerklePatricia proof
+    assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);
+
     Withdrawal memory w;
-    w.txHash = txHash;
-    w.token = token;
+    w.token = addrs[0];
     w.amount = amount;
+    w.txRoot = txRoot;
     pendingWithdrawals[msg.sender] = w;
   }
 
@@ -244,7 +263,7 @@ contract Relay {
   //
   // indices = locations within the Merkle tree [ tx, header ]
   // loc = location of the header root
-  function withdraw(address fromChain, uint64[2] indices, uint64 loc, bytes data) public {
+  /*function withdraw(address fromChain, uint64[2] indices, uint64 loc, bytes data) public {
     // 1. Transaction proof
     // First 8 bytes are txTreeDepth
     Withdrawal memory w = pendingWithdrawals[msg.sender];
@@ -293,16 +312,16 @@ contract Relay {
     // Form the block header we are trying to prove
     // hash(prevHash, timestamp, blockNum, txRoot)
     proof[0] = keccak256(
-      MerkleLib.getBytes32(offset + 8, data),
-      MerkleLib.getBytes32(offset + 40, data),
-      MerkleLib.getBytes32(offset + 72, data),
+      getBytes32(offset + 8, data),
+      getBytes32(offset + 40, data),
+      getBytes32(offset + 72, data),
       proof[proof.length - 1]
     );
     offset += 104;
 
     // Fill the Merkle proof for headers
-    for (uint64 h = 0; h < MerkleLib.getUint64(0, data); h++) {
-      proof[h + 1] = MerkleLib.getBytes32(offset + (h * 32), data);
+    for (uint64 h = 0; h < getUint64(0, data); h++) {
+      proof[h + 1] = getBytes32(offset + (h * 32), data);
     }
     offset += (h - 1) * 32;
 
@@ -316,7 +335,7 @@ contract Relay {
       ) == true
     );
     return offset;
-  }
+  }*/
 
   // Check a series of signatures against staker addresses. If there are enough
   // signatures (>= validatorThreshold), return true
@@ -332,8 +351,8 @@ contract Relay {
       valTmp = ecrecover(
         h,
         uint8(sigs[i * 65 + 64]),
-        MerkleLib.getBytes32(i * 65, sigs),
-        MerkleLib.getBytes32(i * 65 + 32, sigs)
+        getBytes32(i * 65, sigs),
+        getBytes32(i * 65 + 32, sigs)
       );
       // Make sure this address is a staker and NOT the proposer
       assert(stakers[valTmp] != 0);
@@ -371,6 +390,30 @@ contract Relay {
   public constant returns (address) {
     return tokens[chain][token];
   }
+
+  // Get 32 bytes and cast to byes32
+  function getBytes32(uint64 start, bytes data) pure returns (bytes32) {
+    bytes32[1] memory newData;
+    assembly {
+      mstore(newData, mload(add(start, add(data, 0x32))))
+    }
+    return newData[0];
+  }
+
+  // Get 32 bytes and cast to uint256
+  function getUint256(uint64 start, bytes data) pure returns (uint256) {
+    uint256[1] memory newData;
+    assembly {
+      mstore(newData, mload(add(start, add(data, 0x32))))
+    }
+    return newData[0];
+  }
+
+  // Get 8 bytes and cast to uint64
+  function getUint64(uint64 start, bytes data) pure returns (uint64) {
+    return uint64(getUint256(start, data));
+  }
+
 
   // Staking token can only be set at instantiation!
   function Relay(address token) {

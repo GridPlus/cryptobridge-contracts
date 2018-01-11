@@ -25,7 +25,14 @@
   },
   "homepage": "https://github.com/alex-miller-0/trustless-relay#readme",
   "dependencies": {
+    "async": "^2.6.0",
+    "bluebird": "^3.5.1",
+    "eth-proof": "^0.1.3",
+    "ethereumjs-block": "^1.7.0",
+    "ethereumjs-tx": "^1.3.3",
     "left-pad": "^1.2.0",
+    "merkle-patricia-tree": "^2.3.0",
+    "rlp": "^2.0.0",
     "solidity-sha3": "^0.4.1",
     "truffle-hdwallet-provider": "0.0.3",
     "web3": "^1.0.0-beta.27"

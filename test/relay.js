@@ -6,15 +6,21 @@ const sha3 = require('solidity-sha3').default;
 const util = require('ethereumjs-util');
 const truffleConf = require('../truffle.js').networks;
 const Web3 = require('web3');
+const EthProof = require('eth-proof');
+const txProof = require('./txProof.js');
 
 const Token = artifacts.require('HumanStandardToken.sol'); // EPM package
 const Relay = artifacts.require('./Relay');
 
 // Need two of these
-const providerA = `http://${truffleConf.development.host}:${truffleConf.development.port}`;
-const web3A = new Web3(new Web3.providers.HttpProvider(providerA));
-const providerB = `http://${truffleConf.developmentB.host}:${truffleConf.developmentB.port}`;
-const web3B = new Web3(new Web3.providers.HttpProvider(providerB));
+const _providerA = `http://${truffleConf.development.host}:${truffleConf.development.port}`;
+const providerA = new Web3.providers.HttpProvider(_providerA);
+const web3A = new Web3(providerA);
+const epA = new EthProof(providerA);
+const _providerB = `http://${truffleConf.developmentB.host}:${truffleConf.developmentB.port}`;
+const providerB = new Web3.providers.HttpProvider(_providerB);
+const web3B = new Web3(providerB);
+const epB = new EthProof(providerB);
 
 // ABI and bytes for interacting with web3B
 const relayABI = require('../build/contracts/Relay.json').abi;
@@ -183,20 +189,27 @@ contract('Relay', (accounts) => {
     it('Should deposit 5 token B to the relay on chain B', async () => {
       await tokenB.methods.approve(relayB.options.address, 5).send({ from: accounts[1] })
       const allowance = await tokenB.methods.allowance(accounts[1], relayB.options.address).call();
-      deposit = await relayB.methods.deposit(tokenB.options.address, relayA.address, 5)
+      const _deposit = await relayB.methods.deposit(tokenB.options.address, relayA.address, 5)
         .send({ from: accounts[1] })
       const balance = await tokenB.methods.balanceOf(accounts[1]).call();
       assert(parseInt(balance) === 0);
+      deposit = await web3B.eth.getTransaction(_deposit.transactionHash);
+      depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
     });
 
     it('Should get the full block for the deposit', async () => {
-      depositBlock = await web3B.eth.getBlock(deposit.blockNumber);
     });
+
+    it('test', () => {
+      txProof.build(deposit, depositBlock)
+      .then((proof) => { console.log('proof', proof); })
+    })
   })
 
   describe('Stakers: Relay blocks', () => {
     it('Should form a Merkle tree from the last two block headers, get signatures, and submit to chain A', async () => {
 
+      // TODO: Implement here to claim the bounty.
     });
   })
 
