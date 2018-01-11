@@ -20,6 +20,9 @@ contract Relay {
     address indexed token, uint256 amount);
   event TokenAdded(address indexed fromChain, address indexed origToken,
     address indexed newToken);
+  event TokenAssociated(address indexed toChain, address indexed fromToken,
+    address indexed toToken);
+
 
   // Admin has the ability to add tokens to the relay
   address public admin;
@@ -135,7 +138,7 @@ contract Relay {
   // ADMIN FUNCTIONS
   // ===========================================================================
 
-  // Map a token (or ether) to a token on the original chain
+  // Create a token and map it to an existing one on the origin chain
   function addToken(address newToken, address origToken, address fromChain)
   public payable onlyAdmin() {
     // Ether is represented as address(1). We don't need to map the entire supply
@@ -146,9 +149,17 @@ contract Relay {
       assert(newToken != address(0));
       HumanStandardToken t = HumanStandardToken(newToken);
       t.transferFrom(msg.sender, address(this), t.totalSupply());
-      tokens[fromChain][origToken] = newToken;
+      tokens[fromChain][newToken] = origToken;
     }
     TokenAdded(fromChain, origToken, newToken);
+  }
+
+  // Forward association. Map an existing token to a replciated one on the
+  // destination chain.
+  function associateToken(address toToken, address fromToken, address toChain)
+  public onlyAdmin() {
+    tokens[toChain][fromToken] = toToken;
+    TokenAssociated(toChain, fromToken, toToken);
   }
 
   // Change the number of validators required to allow a passed header root
@@ -354,6 +365,11 @@ contract Relay {
     }
     // Winner winner chicken dinner
     return stakes[i - 1].staker;
+  }
+
+  function getTokenMapping(address chain, address token)
+  public constant returns (address) {
+    return tokens[chain][token];
   }
 
   // Staking token can only be set at instantiation!

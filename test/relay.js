@@ -30,6 +30,8 @@ let tokenB;
 let relayA;
 let relayB;
 let merkleLibBAddr;
+let deposit;
+let depositBlock;
 
 // Parameters that can be changed throughout the process
 let proposer;
@@ -157,6 +159,13 @@ contract('Relay', (accounts) => {
       await relayA.addToken(tokenA.address, tokenB.options.address, relayB.options.address)
     });
 
+    it('Should map token on chainB to the one on chain A', async () => {
+      await relayB.methods.associateToken(tokenA.address, tokenB.options.address, relayA.address)
+        .send({ from: accounts[0] });
+      const associatedToken = await relayB.methods.getTokenMapping(relayA.address, tokenB.options.address).call();
+      assert(associatedToken.toLowerCase() == tokenA.address.toLowerCase());
+    })
+
     it('Should ensure the relay on chain A has all of the mapped token', async () => {
       const supply = await tokenA.totalSupply();
       const held = await tokenA.balanceOf(relayA.address);
@@ -172,11 +181,16 @@ contract('Relay', (accounts) => {
 
   describe('User: Deposit tokens on chain B', () => {
     it('Should deposit 5 token B to the relay on chain B', async () => {
-
+      await tokenB.methods.approve(relayB.options.address, 5).send({ from: accounts[1] })
+      const allowance = await tokenB.methods.allowance(accounts[1], relayB.options.address).call();
+      deposit = await relayB.methods.deposit(tokenB.options.address, relayA.address, 5)
+        .send({ from: accounts[1] })
+      const balance = await tokenB.methods.balanceOf(accounts[1]).call();
+      assert(parseInt(balance) === 0);
     });
 
-    it('Should ensure the tokens were successfully deposited', async () => {
-
+    it('Should get the full block for the deposit', async () => {
+      depositBlock = await web3B.eth.getBlock(deposit.blockNumber);
     });
   })
 
