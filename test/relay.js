@@ -8,6 +8,7 @@ const truffleConf = require('../truffle.js').networks;
 const Web3 = require('web3');
 const EthProof = require('eth-proof');
 const txProof = require('./txProof.js');
+const rlp = require('rlp');
 
 const Token = artifacts.require('HumanStandardToken.sol'); // EPM package
 const Relay = artifacts.require('./Relay');
@@ -27,7 +28,7 @@ const relayABI = require('../build/contracts/Relay.json').abi;
 const relayBytes = require('../build/contracts/Relay.json').bytecode;
 const tokenABI = require('../build/contracts/HumanStandardToken.json').abi;
 const tokenBytes = require('../build/contracts/HumanStandardToken.json').bytecode;
-const merkleLibBytes = require('../build/contracts/MerkleLib.json').bytecode;
+const merkleLibBytes = require('../build/contracts/MerklePatriciaProof.json').bytecode;
 
 // Global variables (will be references throughout the tests)
 let stakingToken;
@@ -200,9 +201,22 @@ contract('Relay', (accounts) => {
     it('Should get the full block for the deposit', async () => {
     });
 
-    it('test', () => {
-      txProof.build(deposit, depositBlock)
-      .then((proof) => { console.log('proof', proof); })
+    it('test', async () => {
+      const proof = await txProof.build(deposit, depositBlock);
+      // console.log('proof', proof)
+      let txbytes = `0x${leftPad(deposit.nonce.toString(16), 64, '0')}`
+      txbytes += leftPad(deposit.gasPrice.toString(16), 64, '0');
+      txbytes += leftPad(deposit.gas.toString(16), 64, '0');
+      txbytes += leftPad(deposit.value.toString(16), 64, '0');
+      // These are placeholds. Need to get s and r values
+      txbytes +=  'e435309291e7f9964f03db7dd55c22764db5e1c49b3ad3375998e37904f10d88';
+      txbytes +=  '00efc85092f59462235775aa5ee2bbf7e61e102ae94d3285af504a0986a2faae';
+      console.log('txBytes', txbytes)
+      const path = `0x${rlp.encode(proof.path).toString('hex')}`;
+      const parentNodes = `0x${rlp.encode(proof.parentNodes).toString('hex')}`;
+      const test = await relayA.prepWithdraw([tokenB.options.address, relayB.options.address], 5,
+        1, depositBlock.transactionsRoot, txbytes, path, parentNodes);
+      console.log('test', test)
     })
   })
 

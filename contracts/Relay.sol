@@ -200,23 +200,25 @@ contract Relay {
   // addrs = [token, fromChain]
   // txParams (bytes) = [ nonce (32), gasPrice (32), gasLimit (32), value (32), r (32), s (32) ]
   function prepWithdraw(address[2] addrs, uint256 amount,
-  uint8 v, bytes32 txRoot, bytes txParams, bytes path, bytes parentNodes) public {
+  uint8 v, bytes32 txRoot, bytes txParams, bytes path, bytes parentNodes) public constant returns (bytes) {
     // Form the transaction data. It should be [token, fromChain, amount]
     bytes memory txData;
     bytes memory tx;
+    address token = addrs[0];
+    address fromChain = addrs[1];
     // Form the raw transaction as a bytes array using the first 100 bytes of the data
     assembly {
       tx := mload(0x40)
       // ==> nonce
-      /*mstore(tx, mload(add(txParams, 0x0)))
+      mstore(tx, mload(add(txParams, 0x20)))
       // ==> gasPrice
-      tx := mstore(0x20, mload(add(txParams, 0x20)))
+      /*mstore(tx, mload(add(txParams, 0x20)))
       // ==> gasLimit
-      tx := mstore(0x40, mload(add(txParams, 0x40)))
+      mstore(tx, mload(add(txParams, 0x40)))
       // ==> to
-      tx := mstore(0x60, mload(addrs[1]))
+      tx := add(tx, mload(fromChain))
       // ==> value
-      tx := mstore(0x80, mload(add(txParams, 0x60)))
+      mstore(tx, mload(add(txParams, 0x60)))
       // ==> data
       // Thanks @GNSPS for the txData piece
       txData := mload(0x40)
@@ -229,25 +231,25 @@ contract Relay {
       txData := add(txData, 4)
       txData := add(txData, mload(amount))
       txData := add(txData, 0x20)
-      txData := add(txData, mload(addrs[1]))
+      txData := add(txData, mload(fromChain))
       txData := add(txData, 0x20)
-      txData := add(txData, mload(addrs[0]))
+      txData := add(txData, mload(token))
       txData := add(txData, 0x20)
       let L := mload(txData)
       // ==> r
-      tx := mstore(0x80 + L, mload(add(txParams, 0x80)))
+      mstore(tx, mload(add(txParams, 0x80)))
       // ==> s
-      tx := mstore(0x100 + L, mload(add(txParams, 0x100)))*/
+      mstore(tx, mload(add(txParams, 0x100)))*/
     }
-
+    return tx;
     // Make sure this transaction is the value on the path via a MerklePatricia proof
-    assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);
+    /*assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);
 
     Withdrawal memory w;
     w.token = addrs[0];
     w.amount = amount;
     w.txRoot = txRoot;
-    pendingWithdrawals[msg.sender] = w;
+    pendingWithdrawals[msg.sender] = w;*/
   }
 
   // To withdraw a token, the user needs to perform three proofs:

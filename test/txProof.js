@@ -10,12 +10,9 @@ const async = require('async');
 exports.build = build;
 
 function build(tx, block) {
-  console.log('tx', tx);
-  console.log('block', block);
   return new Promise((resolve, reject) => {
     let txTrie = new Trie();
     async.map(block.transactions, (siblingTx, cb) => {
-      console.log('siblingtx', siblingTx);
       let path = rlp.encode(siblingTx.transactionIndex);
       const rawSignedSiblingTx = new EthereumTx(squanchTx(siblingTx)).serialize();
       txTrie.put(path, rawSignedSiblingTx, (err) => {
@@ -48,7 +45,6 @@ var getRawHeader = (_block) => {
 }
 
 var squanchTx = (tx) => {
-  console.log('tx', tx)
   tx.gasPrice = '0x' + tx.gasPrice.toString(16)
   tx.value = '0x' + tx.value.toString(16)
   return tx;
