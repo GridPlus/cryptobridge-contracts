@@ -89,6 +89,12 @@ contract('Relay', (accounts) => {
       assert(admin == accounts[0]);
     });
 
+    it('Should set the validator threshold to 3', async () => {
+      await relayA.updateValidatorThreshold(3);
+      const thresh = await relayA.validatorThreshold();
+      assert(parseInt(thresh) === 3);
+    })
+
     it('Should give a small amount of ether to the relay', async () => {
       await web3A.eth.sendTransaction({
         to: relayA.address,
@@ -246,7 +252,7 @@ contract('Relay', (accounts) => {
   describe('Stakers: Relay blocks', () => {
     let start;
     let end;
-    
+
     it('Should form a Merkle tree from the last four block headers, get signatures, and submit to chain A', async () => {
       start = depositBlock.number - 3;
       end = depositBlock.number;
@@ -255,14 +261,18 @@ contract('Relay', (accounts) => {
       assert(headerRoot != null);
     });
 
-    it('Should get signatures from stakers for proposed header root', async () => {
+    it('Should get signatures from stakers for proposed header root and check them', async () => {
       // Sign and store
-      const msg = val.getMsg(start, end, headerRoot);
+      const msg = val.getMsg(headerRoot, relayB.options.address, start, end);
       let sigs = [];
       for (let i = 1; i < wallets.length; i++) {
-        sigs.push(val.sign(msg, wallets[i]));
+        if (wallets[i][0] != proposer) {
+          sigs.push(val.sign(msg, wallets[i]));
+        }
       }
-      console.log('sigs', sigs);
+      const sigData = val.formatSigs(sigs);
+      const passing = await relayA.checkSignatures(headerRoot, relayB.options.address, start, end, sigData);
+      assert(passing === true);
     });
 
     it('Should submit header and sigs to chain A', async () => {
