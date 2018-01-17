@@ -10,6 +10,7 @@ const EthProof = require('eth-proof');
 const txProof = require('./util/txProof.js');
 const rlp = require('rlp');
 const blocks = require('./util/blocks.js');
+const val = require('./util/val.js');
 const Token = artifacts.require('HumanStandardToken.sol'); // EPM package
 const Relay = artifacts.require('./Relay');
 
@@ -31,6 +32,7 @@ const tokenBytes = require('../build/contracts/HumanStandardToken.json').bytecod
 const merkleLibBytes = require('../build/contracts/MerklePatriciaProof.json').bytecode;
 
 // Global variables (will be references throughout the tests)
+let wallets;
 let stakingToken;
 let tokenA;
 let tokenB;
@@ -39,6 +41,7 @@ let relayB;
 let merkleLibBAddr;
 let deposit;
 let depositBlock;
+let headers;
 let headerRoot;
 let sigs = [];
 
@@ -50,6 +53,27 @@ contract('Relay', (accounts) => {
   function isEVMException(err) {
     return err.toString().includes('VM Exception');
   }
+
+  function generateFirstWallets(n, _wallets, hdPathIndex) {
+    const hdwallet = hdkey.fromMasterSeed(bip39.mnemonicToSeed(secrets.mnemonic));
+    const node = hdwallet.derivePath(secrets.hdPath + hdPathIndex.toString());
+    const secretKey = node.getWallet().getPrivateKeyString();
+    const addr = node.getWallet().getAddressString();
+    _wallets.push([addr, secretKey]);
+    const nextHDPathIndex = hdPathIndex + 1;
+    if (nextHDPathIndex >= n) {
+      return _wallets;
+    }
+    return generateFirstWallets(n, _wallets, nextHDPathIndex);
+  }
+
+
+  describe('Wallets', () => {
+    it('Should create wallets for first 4 accounts', async () => {
+      wallets = generateFirstWallets(4, [], 0);
+      assert(wallets.length == 4);
+    })
+  })
 
   describe('Admin: Relay setup', () => {
     it('Should create a token on chain A and give it out to accounts 1-3', async () => {
@@ -220,20 +244,29 @@ contract('Relay', (accounts) => {
   })
 
   describe('Stakers: Relay blocks', () => {
-    it('Should form a Merkle tree from the last two block headers, get signatures, and submit to chain A', async () => {
-      const headerN = await blocks.getHeader(depositBlock.number, web3B);
-      const headerPrev = await blocks.getHeader(depositBlock.number - 1, web3B);
-      headerRoot = blocks.getRoot([headerPrev, headerN]);
+    let start;
+    let end;
+    
+    it('Should form a Merkle tree from the last four block headers, get signatures, and submit to chain A', async () => {
+      start = depositBlock.number - 3;
+      end = depositBlock.number;
+      headers = await blocks.getHeaders(start, end, web3B);
+      headerRoot = blocks.getRoot(headers);
       assert(headerRoot != null);
     });
 
     it('Should get signatures from stakers for proposed header root', async () => {
-      // Prove header from data
       // Sign and store
+      const msg = val.getMsg(start, end, headerRoot);
+      let sigs = [];
+      for (let i = 1; i < wallets.length; i++) {
+        sigs.push(val.sign(msg, wallets[i]));
+      }
+      console.log('sigs', sigs);
     });
 
     it('Should submit header and sigs to chain A', async () => {
-      
+
     });
   })
 
