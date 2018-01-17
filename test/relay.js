@@ -7,9 +7,9 @@ const util = require('ethereumjs-util');
 const truffleConf = require('../truffle.js').networks;
 const Web3 = require('web3');
 const EthProof = require('eth-proof');
-const txProof = require('./txProof.js');
+const txProof = require('./util/txProof.js');
 const rlp = require('rlp');
-
+const blocks = require('./util/blocks.js');
 const Token = artifacts.require('HumanStandardToken.sol'); // EPM package
 const Relay = artifacts.require('./Relay');
 
@@ -39,6 +39,8 @@ let relayB;
 let merkleLibBAddr;
 let deposit;
 let depositBlock;
+let headerRoot;
+let sigs = [];
 
 // Parameters that can be changed throughout the process
 let proposer;
@@ -198,9 +200,6 @@ contract('Relay', (accounts) => {
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
     });
 
-    it('Should get the full block for the deposit', async () => {
-    });
-
     it('test', async () => {
       const proof = await txProof.build(deposit, depositBlock);
       // console.log('proof', proof)
@@ -222,8 +221,19 @@ contract('Relay', (accounts) => {
 
   describe('Stakers: Relay blocks', () => {
     it('Should form a Merkle tree from the last two block headers, get signatures, and submit to chain A', async () => {
+      const headerN = await blocks.getHeader(depositBlock.number, web3B);
+      const headerPrev = await blocks.getHeader(depositBlock.number - 1, web3B);
+      headerRoot = blocks.getRoot([headerPrev, headerN]);
+      assert(headerRoot != null);
+    });
 
-      // TODO: Implement here to claim the bounty.
+    it('Should get signatures from stakers for proposed header root', async () => {
+      // Prove header from data
+      // Sign and store
+    });
+
+    it('Should submit header and sigs to chain A', async () => {
+      
     });
   })
 
