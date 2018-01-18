@@ -1,10 +1,32 @@
 pragma solidity ^0.4.18;
 
 import "./MerklePatriciaProof.sol";
-import "tokens/Token.sol";  // truffle package (install with `truffle install tokens`)
-import "tokens/HumanStandardToken.sol";
+import "./RLPEncode.sol";
+import "./BytesLib.sol";
+import "tokens/contracts/eip20/EIP20.sol";
 
 contract Relay {
+
+
+
+  //helpers
+  function toBytes(address a) constant returns (bytes b) {
+      assembly {
+        let m := mload(0x40)
+        mstore(add(m, 20), xor(0x140000000000000000000000000000000000000000, a))
+        mstore(0x40, add(m, 52))
+        b := m
+      }
+  }
+
+  function toBytes(uint256 x) returns (bytes b) {
+    b = new bytes(32);
+    assembly { mstore(add(b, 32), x) }
+  }
+
+  function encodeAddress(address a) returns(bytes) {
+    return BytesLib.concat(new bytes(12) , toBytes(a));
+  }
 
   // ===========================================================================
   // GLOBAL VARIABLES
@@ -82,7 +104,7 @@ contract Relay {
 
   // Stake a specified quantity of the staking token
   function stake(uint256 amount) public {
-    HumanStandardToken t = HumanStandardToken(stakeToken);
+    EIP20 t = EIP20(stakeToken);
     t.transferFrom(msg.sender, address(this), amount);
     // We can't have a 0-length stakes array
     if (stakes.length == 0) { stakes.push(s); }
@@ -106,7 +128,7 @@ contract Relay {
     assert(amount <= stakes[stakers[msg.sender]].amount);
     stakes[stakers[msg.sender]].amount -= amount;
     stakeSum -= amount;
-    HumanStandardToken t = HumanStandardToken(stakeToken);
+    EIP20 t = EIP20(stakeToken);
     t.transfer(msg.sender, amount);
     if (stakes[stakers[msg.sender]].amount == 0) {
       delete stakes[stakers[msg.sender]];
@@ -147,7 +169,7 @@ contract Relay {
     if (newToken != address(1)) {
       // Adding ERC20 tokens is stricter. We need to map the total supply.
       assert(newToken != address(0));
-      HumanStandardToken t = HumanStandardToken(newToken);
+      EIP20 t = EIP20(newToken);
       t.transferFrom(msg.sender, address(this), t.totalSupply());
       tokens[fromChain][newToken] = origToken;
     }
@@ -185,7 +207,7 @@ contract Relay {
   // Only tokens for now, but ether may be allowed later.
   function deposit(address token, address toChain, uint256 amount) public payable {
     assert(tokens[toChain][token] != address(0));
-    HumanStandardToken t = HumanStandardToken(token);
+    EIP20 t = EIP20(token);
     t.transferFrom(msg.sender, address(this), amount);
     Deposit(msg.sender, toChain, address(this), amount);
   }
@@ -199,58 +221,41 @@ contract Relay {
   //
   // addrs = [token, fromChain]
   // txParams (bytes) = [ nonce (32), gasPrice (32), gasLimit (32), value (32), r (32), s (32) ]
-  function prepWithdraw(address[2] addrs, uint256 amount,
-  uint8 v, bytes32 txRoot, bytes txParams, bytes path, bytes parentNodes) public constant returns (bytes) {
+
+  //nonce is RLPEncoded
+  //gasPrice is RLPEncoded
+  //gasLimit is RLPEncoded
+  //bytes v is RLPEncoded
+  //bytes r is RLPEncoded
+  //bytes s is RLPEncoded
+  function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v, bytes r, bytes s, address[2] addrs, uint256 amount
+
+  , bytes32 txRoot, bytes path, bytes parentNodes
+  ) public constant returns (bytes) {
     // Form the transaction data. It should be [token, fromChain, amount]
-    bytes memory txData;
-    bytes memory tx;
-    address token = addrs[0];
-    address fromChain = addrs[1];
-    // Form the raw transaction as a bytes array using the first 100 bytes of the data
-    assembly {
-      tx := mload(0x40)
-      // ==> nonce
-      mstore(tx, 5)
-      //mstore(tx, mload(add(txParams, 0x20)))
-      // ==> gasPrice
-      /*mstore(tx, mload(add(txParams, 0x20)))
-      // ==> gasLimit
-      mstore(tx, mload(add(txParams, 0x40)))
-      // ==> to
-      tx := add(tx, mload(fromChain))
-      // ==> value
-      mstore(tx, mload(add(txParams, 0x60)))
-      // ==> data
-      // Thanks @GNSPS for the txData piece
-      txData := mload(0x40)
-      // Assign 100 bytes for the txParams
-      mstore(0x40, add(txData, 0x84))
-      mstore(txData, 0x64)
-      txData := add(txData, 0x20)
-      // keccak256(deposit(address,address,uint256))[:8] = 0x8340f549
-      mstore(txData, mload(0x8340f549))
-      txData := add(txData, 4)
-      txData := add(txData, mload(amount))
-      txData := add(txData, 0x20)
-      txData := add(txData, mload(fromChain))
-      txData := add(txData, 0x20)
-      txData := add(txData, mload(token))
-      txData := add(txData, 0x20)
-      let L := mload(txData)
-      // ==> r
-      mstore(tx, mload(add(txParams, 0x80)))
-      // ==> s
-      mstore(tx, mload(add(txParams, 0x100)))*/
-    }
-    return tx;
+
+    bytes[] memory rawTx = new bytes[](9);
+    rawTx[0] = nonce;
+    rawTx[1] = gasPrice;
+    rawTx[2] = gasLimit;
+    rawTx[3] = RLPEncode.encodeBytes(encodeAddress(addrs[1]));
+    rawTx[4] = hex"80"; //RLPEncode for value 0
+    //a340f549 function signature
+    rawTx[5] = RLPEncode.encodeBytes(BytesLib.concat(hex"a340f549", BytesLib.concat(encodeAddress(addrs[0]), BytesLib.concat(encodeAddress(addrs[1]), toBytes(amount)))));
+    rawTx[6] = v;
+    rawTx[7] = r;
+    rawTx[8] = s;
+
+    bytes memory tx = RLPEncode.encodeList(rawTx);
+
     // Make sure this transaction is the value on the path via a MerklePatricia proof
-    /*assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);
+    assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);
 
     Withdrawal memory w;
     w.token = addrs[0];
     w.amount = amount;
     w.txRoot = txRoot;
-    pendingWithdrawals[msg.sender] = w;*/
+    pendingWithdrawals[msg.sender] = w;
   }
 
   // To withdraw a token, the user needs to perform three proofs:
@@ -276,7 +281,7 @@ contract Relay {
     offset = headerProof(offset, indices[1], fromChain, loc, data);
 
     // If both proofs succeeded, we can make the withdrawal of tokens!
-    HumanStandardToken t = HumanStandardToken(w.token);
+    EIP20 t = EIP20(w.token);
     t.transfer(msg.sender, w.amount);
     Withdraw(msg.sender, fromChain, w.token, w.amount);
     delete pendingWithdrawals[msg.sender];
