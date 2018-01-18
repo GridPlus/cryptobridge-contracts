@@ -13,6 +13,7 @@ const blocks = require('./util/blocks.js');
 const val = require('./util/val.js');
 const Token = artifacts.require('HumanStandardToken.sol'); // EPM package
 const Relay = artifacts.require('./Relay');
+const EthereumTx = require('ethereumjs-tx');
 
 // Need two of these
 const _providerA = `http://${truffleConf.development.host}:${truffleConf.development.port}`;
@@ -230,24 +231,6 @@ contract('Relay', (accounts) => {
       deposit = await web3B.eth.getTransaction(_deposit.transactionHash);
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
     });
-
-    it('test', async () => {
-      const proof = await txProof.build(deposit, depositBlock);
-      // console.log('proof', proof)
-      let txbytes = `0x${leftPad(deposit.nonce.toString(16), 64, '0')}`
-      txbytes += leftPad(deposit.gasPrice.toString(16), 64, '0');
-      txbytes += leftPad(deposit.gas.toString(16), 64, '0');
-      txbytes += leftPad(deposit.value.toString(16), 64, '0');
-      // These are placeholds. Need to get s and r values
-      txbytes +=  'e435309291e7f9964f03db7dd55c22764db5e1c49b3ad3375998e37904f10d88';
-      txbytes +=  '00efc85092f59462235775aa5ee2bbf7e61e102ae94d3285af504a0986a2faae';
-      console.log('txBytes', txbytes)
-      const path = `0x${rlp.encode(proof.path).toString('hex')}`;
-      const parentNodes = `0x${rlp.encode(proof.parentNodes).toString('hex')}`;
-      const test = await relayA.prepWithdraw([tokenB.options.address, relayB.options.address], 5,
-        1, depositBlock.transactionsRoot, txbytes, path, parentNodes);
-      console.log('test', test)
-    })
   })
 
   describe('Stakers: Relay blocks', () => {
@@ -300,6 +283,46 @@ contract('Relay', (accounts) => {
   })
 
   describe('User: Withdraw tokens on chain A', () => {
+    it('Should get the signature for the deposit', async () => {
+      const txParams = {
+        nonce: parseInt(deposit.nonce).toString(16),
+        gasPrice: parseInt(deposit.gasPrice).toString(16),
+        to: deposit.to,
+        value: parseInt(deposit.value).toString(16),
+        data: deposit.input,
+      };
+      const tx = new EthereumTx(txParams)
+      tx.sign(Buffer.from(wallets[1][1].slice(2), 'hex'));
+      deposit.v = tx.v.toString('hex');
+      deposit.s = tx.s.toString('hex');
+      deposit.r = tx.r.toString('hex');
+      assert(deposit.v.length === 2);
+      assert(deposit.s.length === 64);
+      assert(deposit.r.length === 64);
+    });
+
+
+    // it('test', async () => {
+        // Need to spoof the transaction params lol
+
+    //   const proof = await txProof.build(deposit, depositBlock);
+    //   // console.log('proof', proof)
+    //   let txbytes = `0x${leftPad(deposit.nonce.toString(16), 64, '0')}`
+    //   txbytes += leftPad(deposit.gasPrice.toString(16), 64, '0');
+    //   txbytes += leftPad(deposit.gas.toString(16), 64, '0');
+    //   txbytes += leftPad(deposit.value.toString(16), 64, '0');
+    //   // These are placeholds. Need to get s and r values
+    //   txbytes +=  'e435309291e7f9964f03db7dd55c22764db5e1c49b3ad3375998e37904f10d88';
+    //   txbytes +=  '00efc85092f59462235775aa5ee2bbf7e61e102ae94d3285af504a0986a2faae';
+    //   console.log('txBytes', txbytes)
+    //   const path = `0x${rlp.encode(proof.path).toString('hex')}`;
+    //   const parentNodes = `0x${rlp.encode(proof.parentNodes).toString('hex')}`;
+    //   const test = await relayA.prepWithdraw([tokenB.options.address, relayB.options.address], 5,
+    //     1, depositBlock.transactionsRoot, txbytes, path, parentNodes);
+    //   console.log('test', test)
+    // })
+
+
     it('Should prepare the withdrawal with the transaction data (accounts[1])', async () => {
 
     });
