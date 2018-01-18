@@ -118,7 +118,7 @@ contract Relay {
   function proposeRoot(bytes32 root, address chainId, uint256 start, uint256 end,
   bytes sigs) public {
     // Make sure enough validators sign off on the proposed header root
-    /*assert(checkSignatures(root, chainId, start, end, sigs) == true);*/
+    assert(checkSignatures(root, chainId, start, end, sigs) == true);
     // Add the header root
     headerRoots[chainId].push(root);
     // Calculate the reward and issue it

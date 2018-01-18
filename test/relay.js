@@ -44,6 +44,7 @@ let depositBlock;
 let headers;
 let headerRoot;
 let sigs = [];
+let gasPrice = 10 ** 9;
 
 // Parameters that can be changed throughout the process
 let proposer;
@@ -252,6 +253,7 @@ contract('Relay', (accounts) => {
   describe('Stakers: Relay blocks', () => {
     let start;
     let end;
+    let sigData;
 
     it('Should form a Merkle tree from the last four block headers, get signatures, and submit to chain A', async () => {
       start = depositBlock.number - 3;
@@ -270,13 +272,30 @@ contract('Relay', (accounts) => {
           sigs.push(val.sign(msg, wallets[i]));
         }
       }
-      const sigData = val.formatSigs(sigs);
+      sigData = val.formatSigs(sigs);
       const passing = await relayA.checkSignatures(headerRoot, relayB.options.address, start, end, sigData);
       assert(passing === true);
     });
 
     it('Should submit header and sigs to chain A', async () => {
+      let i;
+      accounts.forEach((account, _i) => {
+        if (account == proposer) { i = _i; }
+      })
+      const bountyStart = await web3A.eth.getBalance(relayA.address);
+      const proposerStart = await web3A.eth.getBalance(accounts[i]);
 
+      const receipt = await relayA.proposeRoot(headerRoot, relayB.options.address, start, end, sigData,
+        { from: accounts[i], gasPrice: gasPrice });
+      const bountyEnd = await web3A.eth.getBalance(relayA.address);
+      const proposerEnd = await web3A.eth.getBalance(proposer);
+      const gasCost = receipt.receipt.gasUsed * gasPrice;
+
+      // Make sure the proposer got the payout. There will be rounding errors from
+      // JS so just check that it's within 10,000 wei
+      const diffBounty = Math.round((bountyStart - bountyEnd) / 10000);
+      const diffProposer = Math.round((proposerEnd - proposerStart + gasCost) / 10000);
+      assert(diffBounty === diffProposer);
     });
   })
 
