@@ -239,7 +239,8 @@ contract Relay {
     rawTx[1] = gasPrice;
     rawTx[2] = gasLimit;
     rawTx[3] = RLPEncode.encodeBytes(encodeAddress(addrs[1]));
-    rawTx[4] = hex"80";
+    rawTx[4] = hex"80"; //RLPEncode for value 0
+    //a340f549 function signature
     rawTx[5] = RLPEncode.encodeBytes(BytesLib.concat(hex"a340f549", BytesLib.concat(encodeAddress(addrs[0]), BytesLib.concat(encodeAddress(addrs[1]), toBytes(amount)))));
     rawTx[6] = v;
     rawTx[7] = r;
