@@ -52,7 +52,7 @@ contract Relay {
   Stake[] stakes;
   uint256 public stakeSum;
   address stakeToken;
-  uint64 validatorThreshold = 0;
+  uint64 public validatorThreshold = 0;
 
   // Pending withdrawals. The user prepares a withdrawal with tx data and then
   // releases it with a withdraw. It can be overwritten by the user and gets wiped
@@ -210,7 +210,8 @@ contract Relay {
     assembly {
       tx := mload(0x40)
       // ==> nonce
-      mstore(tx, mload(add(txParams, 0x20)))
+      mstore(tx, 5)
+      //mstore(tx, mload(add(txParams, 0x20)))
       // ==> gasPrice
       /*mstore(tx, mload(add(txParams, 0x20)))
       // ==> gasLimit
@@ -344,28 +345,32 @@ contract Relay {
   // NOTE: For the first version, any staker will work. For the future, we should
   // select a subset of validators from the staker pool.
   function checkSignatures(bytes32 root, address chain, uint256 start, uint256 end,
-  bytes sigs) internal returns (bool) {
+  bytes sigs) public constant returns (bool) {
     bytes32 h = keccak256(root, chain, start, end);
     address valTmp;
     address[] passing;
+    bytes32 r;
+    bytes32 s;
+    uint8 v;
     // signs are chunked in 65 bytes -> [r, s, v]
-    for (uint64 i = 0; i < sigs.length / 65; i ++) {
-      valTmp = ecrecover(
-        h,
-        uint8(sigs[i * 65 + 64]),
-        getBytes32(i * 65, sigs),
-        getBytes32(i * 65 + 32, sigs)
-      );
+    for (uint64 i = 32; i < sigs.length; i += 96) {
+      assembly {
+        r := mload(add(sigs, i))
+        s := mload(add(sigs, add(i, 32)))
+        v := mload(add(sigs, add(i, 64)))
+      }
+      valTmp = ecrecover(h, v, r, s);
       // Make sure this address is a staker and NOT the proposer
       assert(stakers[valTmp] != 0);
       assert(valTmp != getProposer());
       // Unfortunately we need to loop through the cache to make sure there are
       // no signature duplicates. This is the most efficient way to do it since
       // storage costs too much.
-      for (uint j = 0; j < passing.length; j ++) {
+      for (uint64 j = 0; j < (i - 32) / 96; j += 1) {
         assert(passing[j] != valTmp);
       }
       passing.push(valTmp);
+
     }
     return passing.length >= validatorThreshold;
   }

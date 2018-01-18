@@ -30,6 +30,7 @@
     "eth-proof": "^0.1.3",
     "ethereumjs-block": "^1.7.0",
     "ethereumjs-tx": "^1.3.3",
+    "ethereumjs-util": "^5.1.3",
     "left-pad": "^1.2.0",
     "merkle-patricia-tree": "^2.3.0",
     "rlp": "^2.0.0",
