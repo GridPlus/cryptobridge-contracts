@@ -7,9 +7,10 @@ const util = require('ethereumjs-util');
 const truffleConf = require('../truffle.js').networks;
 const Web3 = require('web3');
 const EthProof = require('eth-proof');
-const txProof = require('./txProof.js');
+const txProof = require('./util/txProof.js');
 const rlp = require('rlp');
-
+const blocks = require('./util/blocks.js');
+const val = require('./util/val.js');
 const Token = artifacts.require('HumanStandardToken.sol'); // EPM package
 const Relay = artifacts.require('./Relay');
 
@@ -31,6 +32,7 @@ const tokenBytes = require('../build/contracts/HumanStandardToken.json').bytecod
 const merkleLibBytes = require('../build/contracts/MerklePatriciaProof.json').bytecode;
 
 // Global variables (will be references throughout the tests)
+let wallets;
 let stakingToken;
 let tokenA;
 let tokenB;
@@ -39,6 +41,10 @@ let relayB;
 let merkleLibBAddr;
 let deposit;
 let depositBlock;
+let headers;
+let headerRoot;
+let sigs = [];
+let gasPrice = 10 ** 9;
 
 // Parameters that can be changed throughout the process
 let proposer;
@@ -48,6 +54,27 @@ contract('Relay', (accounts) => {
   function isEVMException(err) {
     return err.toString().includes('VM Exception');
   }
+
+  function generateFirstWallets(n, _wallets, hdPathIndex) {
+    const hdwallet = hdkey.fromMasterSeed(bip39.mnemonicToSeed(secrets.mnemonic));
+    const node = hdwallet.derivePath(secrets.hdPath + hdPathIndex.toString());
+    const secretKey = node.getWallet().getPrivateKeyString();
+    const addr = node.getWallet().getAddressString();
+    _wallets.push([addr, secretKey]);
+    const nextHDPathIndex = hdPathIndex + 1;
+    if (nextHDPathIndex >= n) {
+      return _wallets;
+    }
+    return generateFirstWallets(n, _wallets, nextHDPathIndex);
+  }
+
+
+  describe('Wallets', () => {
+    it('Should create wallets for first 4 accounts', async () => {
+      wallets = generateFirstWallets(4, [], 0);
+      assert(wallets.length == 4);
+    })
+  })
 
   describe('Admin: Relay setup', () => {
     it('Should create a token on chain A and give it out to accounts 1-3', async () => {
@@ -62,6 +89,12 @@ contract('Relay', (accounts) => {
       const admin = await relayA.admin();
       assert(admin == accounts[0]);
     });
+
+    it('Should set the validator threshold to 3', async () => {
+      await relayA.updateValidatorThreshold(3);
+      const thresh = await relayA.validatorThreshold();
+      assert(parseInt(thresh) === 3);
+    })
 
     it('Should give a small amount of ether to the relay', async () => {
       await web3A.eth.sendTransaction({
@@ -198,9 +231,6 @@ contract('Relay', (accounts) => {
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
     });
 
-    it('Should get the full block for the deposit', async () => {
-    });
-
     it('test', async () => {
       const proof = await txProof.build(deposit, depositBlock);
       // console.log('proof', proof)
@@ -221,9 +251,51 @@ contract('Relay', (accounts) => {
   })
 
   describe('Stakers: Relay blocks', () => {
-    it('Should form a Merkle tree from the last two block headers, get signatures, and submit to chain A', async () => {
+    let start;
+    let end;
+    let sigData;
 
-      // TODO: Implement here to claim the bounty.
+    it('Should form a Merkle tree from the last four block headers, get signatures, and submit to chain A', async () => {
+      start = depositBlock.number - 3;
+      end = depositBlock.number;
+      headers = await blocks.getHeaders(start, end, web3B);
+      headerRoot = blocks.getRoot(headers);
+      assert(headerRoot != null);
+    });
+
+    it('Should get signatures from stakers for proposed header root and check them', async () => {
+      // Sign and store
+      const msg = val.getMsg(headerRoot, relayB.options.address, start, end);
+      let sigs = [];
+      for (let i = 1; i < wallets.length; i++) {
+        if (wallets[i][0] != proposer) {
+          sigs.push(val.sign(msg, wallets[i]));
+        }
+      }
+      sigData = val.formatSigs(sigs);
+      const passing = await relayA.checkSignatures(headerRoot, relayB.options.address, start, end, sigData);
+      assert(passing === true);
+    });
+
+    it('Should submit header and sigs to chain A', async () => {
+      let i;
+      accounts.forEach((account, _i) => {
+        if (account == proposer) { i = _i; }
+      })
+      const bountyStart = await web3A.eth.getBalance(relayA.address);
+      const proposerStart = await web3A.eth.getBalance(accounts[i]);
+
+      const receipt = await relayA.proposeRoot(headerRoot, relayB.options.address, start, end, sigData,
+        { from: accounts[i], gasPrice: gasPrice });
+      const bountyEnd = await web3A.eth.getBalance(relayA.address);
+      const proposerEnd = await web3A.eth.getBalance(proposer);
+      const gasCost = receipt.receipt.gasUsed * gasPrice;
+
+      // Make sure the proposer got the payout. There will be rounding errors from
+      // JS so just check that it's within 10,000 wei
+      const diffBounty = Math.round((bountyStart - bountyEnd) / 10000);
+      const diffProposer = Math.round((proposerEnd - proposerStart + gasCost) / 10000);
+      assert(diffBounty === diffProposer);
     });
   })
 
