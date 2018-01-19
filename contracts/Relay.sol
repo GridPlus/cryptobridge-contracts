@@ -249,8 +249,8 @@ contract Relay {
     rawTx[1] = gasPrice;
     rawTx[2] = gasLimit;
     rawTx[3] = toBytes(addrs[0]);
-    // Use 0x0 for amount. This means only token-token transfers for now.
-    rawTx[4] = hex"00";
+    // Leave msg.value blank. This means only token-token transfers for now.
+    rawTx[4] = hex"";
     //8340f549 function signature of "deposit(address,address,uint256)"
     rawTx[5] = BytesLib.concat(hex"8340f549",
       BytesLib.concat(encodeAddress(addrs[1]),
@@ -261,9 +261,10 @@ contract Relay {
     rawTx[7] = r;
     rawTx[8] = s;
 
+    bytes memory tx = RLPEncode.encodeList(rawTx);
     // Make sure this transaction is the value on the path via a MerklePatricia proof
     /*assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);*/
-    return RLPEncode.encodeList(rawTx);
+    return tx;
 
     /*Withdrawal memory w;
     w.token = addrs[0];

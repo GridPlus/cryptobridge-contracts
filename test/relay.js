@@ -239,7 +239,7 @@ contract('Relay', (accounts) => {
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
     });
   })
-
+  /*
   describe('Stakers: Relay blocks', () => {
     let start;
     let end;
@@ -288,7 +288,7 @@ contract('Relay', (accounts) => {
       assert(diffBounty === diffProposer);
     });
   })
-
+  */
   describe('User: Withdraw tokens on chain A', () => {
     it('Should get the signature for the deposit', async () => {
        const txParams = {
@@ -317,24 +317,26 @@ contract('Relay', (accounts) => {
       const proof = await txProof.build(deposit, depositBlock);
       const path = proof.path;
       const parentNodes = proof.parentNodes;
-      //
-      // console.log('path', path)
-      // console.log('parentNodes', parentNodes)
 
       const nonce = ensureByte(`0x${parseInt(deposit.nonce).toString(16)}`);
       const gasPrice = ensureByte(`0x${parseInt(deposit.gasPrice).toString(16)}`);
       const gas = ensureByte(`0x${parseInt(deposit.gas).toString(16)}`);
-      const v = ensureByte(`0x${parseInt(deposit.v).toString(16)}`);
+      const v = ensureByte(`0x${(parseInt(deposit.v) + 27).toString(16)}`);
       const r = ensureByte(`0x${deposit.r}`);
       const s = ensureByte(`0x${deposit.s}`);
+      console.log('path', path)
+      console.log('parentNodes', parentNodes);
 
-      console.log('\n\n\n\n')
-      console.log('\n')
-      console.log('rlp.encode', rlp.encode([nonce, gasPrice, gas, relayB.options.address, '0x0', deposit.input, v, r, s]).toString('hex'))
-      const test = await relayA.prepWithdraw(nonce, gasPrice, gas,
-        v, r, s,
+      // Make sure we are RLP encoding the transaction correctly. `encoded` corresponds
+      // to what Solidity calculates.
+      const encoded = rlp.encode([nonce, gasPrice, gas, relayB.options.address, '', deposit.input, v, r, s]).toString('hex');
+      console.log('encoded', encoded)
+      console.log('proof.value', proof.value.toString('hex'))
+      assert(encoded === proof.value.toString('hex'), 'Tx RLP encoding incorrect');
+
+      const test = await relayA.prepWithdraw(nonce, gasPrice, gas, v, r, s,
         [deposit.to, tokenB.options.address, relayA.address], 5,
-        depositBlock.transactionsRoot, path, parentNodes);
+        depositBlock.transactionsRoot, path.toString('hex'), parentNodes.toString('hex'));
       console.log('test', test)
 
       // console.log('rlp.encode', rlp.encode([nonce, gasPrice, gas, rlp.encode(relayB.options.address)]).toString('hex'))
