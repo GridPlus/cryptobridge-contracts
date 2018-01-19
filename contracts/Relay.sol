@@ -219,20 +219,9 @@ contract Relay {
   // of this process where the user proves the transaction root goes in the
   // block header.
   //
-  // addrs = [token, fromChain]
-  // txParams (bytes) = [ nonce (32), gasPrice (32), gasLimit (32), value (32), r (32), s (32) ]
-
-  //nonce is RLPEncoded
-  //gasPrice is RLPEncoded
-  //gasLimit is RLPEncoded
-  //bytes v is RLPEncoded
-  //bytes r is RLPEncoded
-  //bytes s is RLPEncoded
-  //
-  // data1 = nonce, gasPrice, gasLimit
-  // data2 = v, r, s
+  // addrs = [to, token, fromChain]
   function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v,
-    bytes r, bytes s, address[2] addrs,
+    bytes r, bytes s, address[3] addrs,
     uint256 amount, bytes32 txRoot, bytes path, bytes parentNodes)
     public constant returns (bytes) {
     // Form the transaction data. It should be [token, fromChain, amount]
@@ -255,18 +244,22 @@ contract Relay {
     bytes memory rawTx2 = */
     //))));
 
-    bytes[] memory rawTx = new bytes[](2);
+    bytes[] memory rawTx = new bytes[](9);
     rawTx[0] = nonce;
     rawTx[1] = gasPrice;
-    /*rawTx[2] = gasLimit;*/
-    /*rawTx[3] = RLPEncode.encodeBytes(encodeAddress(addrs[1]));*/
+    rawTx[2] = gasLimit;
+    rawTx[3] = toBytes(addrs[0]);
     // Use 0x0 for amount. This means only token-token transfers for now.
-    //rawTx[4] = hex"80"; //RLPEncode for value 0
-    //a340f549 function signature
-    /*rawTx[5] = RLPEncode.encodeBytes(BytesLib.concat(hex"a340f549", BytesLib.concat(encodeAddress(addrs[0]), BytesLib.concat(encodeAddress(addrs[1]), toBytes(amount)))));*/
-    //rawTx[6] = v;
-    //rawTx[7] = r;
-    //rawTx[8] = s;
+    rawTx[4] = hex"00";
+    //8340f549 function signature of "deposit(address,address,uint256)"
+    rawTx[5] = BytesLib.concat(hex"8340f549",
+      BytesLib.concat(encodeAddress(addrs[1]),
+      BytesLib.concat(encodeAddress(addrs[2]),
+      toBytes(amount)
+    )));
+    rawTx[6] = v;
+    rawTx[7] = r;
+    rawTx[8] = s;
 
     // Make sure this transaction is the value on the path via a MerklePatricia proof
     /*assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);*/

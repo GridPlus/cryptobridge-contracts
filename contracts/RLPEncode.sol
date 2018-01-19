@@ -21,7 +21,7 @@ library RLPEncode {
       encoded = new bytes(1);
       encoded = self;
     } else {
-      encoded = encode(self, STRING_SHORT_PREFIX, STRING_LONG_PREFIX);
+      encoded = BytesLib.concat(encodeLength(self.length, 128), self);
 		}
     return encoded;
   }
@@ -43,8 +43,15 @@ library RLPEncode {
       prefix[0] = byte(L + offset);
       return prefix;
     } else {
+      // lenLen is the length of the hex representation of the data length
+      uint lenLen;
+      uint i = 0x1;
+      while(L/i != 0) {
+        lenLen++;
+        i *= 0x100;
+      }
       bytes memory firstByte = new bytes(1);
-      firstByte[0] = byte(offset + 55 + (L / 2));
+      firstByte[0] = byte(offset + 55 + lenLen);
       bytes memory second = new bytes(1);
       second[0] = byte(L);
       return BytesLib.concat(firstByte, second);

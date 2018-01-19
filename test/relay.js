@@ -324,17 +324,20 @@ contract('Relay', (accounts) => {
       const nonce = ensureByte(`0x${parseInt(deposit.nonce).toString(16)}`);
       const gasPrice = ensureByte(`0x${parseInt(deposit.gasPrice).toString(16)}`);
       const gas = ensureByte(`0x${parseInt(deposit.gas).toString(16)}`);
+      const v = ensureByte(`0x${parseInt(deposit.v).toString(16)}`);
+      const r = ensureByte(`0x${deposit.r}`);
+      const s = ensureByte(`0x${deposit.s}`);
 
-      const test = await relayA.prepWithdraw(nonce, gasPrice, gas,
-        deposit.v, deposit.r, deposit.s,
-        [tokenB.options.address, relayB.options.address], 5,
-        depositBlock.transactionsRoot, path, parentNodes);
       console.log('\n\n\n\n')
-      console.log('nonce', nonce)
-      console.log('gasPrice', gasPrice)
       console.log('\n')
+      console.log('rlp.encode', rlp.encode([nonce, gasPrice, gas, relayB.options.address, '0x0', deposit.input, v, r, s]).toString('hex'))
+      const test = await relayA.prepWithdraw(nonce, gasPrice, gas,
+        v, r, s,
+        [deposit.to, tokenB.options.address, relayA.address], 5,
+        depositBlock.transactionsRoot, path, parentNodes);
       console.log('test', test)
-      console.log('rlp.encode', rlp.encode([nonce, gasPrice]).toString('hex'))
+
+      // console.log('rlp.encode', rlp.encode([nonce, gasPrice, gas, rlp.encode(relayB.options.address)]).toString('hex'))
     })
 
 
