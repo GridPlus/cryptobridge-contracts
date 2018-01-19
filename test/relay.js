@@ -11,7 +11,7 @@ const txProof = require('./util/txProof.js');
 const rlp = require('rlp');
 const blocks = require('./util/blocks.js');
 const val = require('./util/val.js');
-const Token = artifacts.require('HumanStandardToken.sol'); // EPM package
+const Token = artifacts.require('EIP20.sol'); // EPM package
 const Relay = artifacts.require('./Relay');
 const EthereumTx = require('ethereumjs-tx');
 
@@ -28,8 +28,8 @@ const epB = new EthProof(providerB);
 // ABI and bytes for interacting with web3B
 const relayABI = require('../build/contracts/Relay.json').abi;
 const relayBytes = require('../build/contracts/Relay.json').bytecode;
-const tokenABI = require('../build/contracts/HumanStandardToken.json').abi;
-const tokenBytes = require('../build/contracts/HumanStandardToken.json').bytecode;
+const tokenABI = require('../build/contracts/EIP20.json').abi;
+const tokenBytes = require('../build/contracts/EIP20.json').bytecode;
 const merkleLibBytes = require('../build/contracts/MerklePatriciaProof.json').bytecode;
 
 // Global variables (will be references throughout the tests)
@@ -49,6 +49,13 @@ let gasPrice = 10 ** 9;
 
 // Parameters that can be changed throughout the process
 let proposer;
+
+// left-pad half-bytes
+function ensureByte(s) {
+  if (s.substr(0, 2) == '0x') { s = s.slice(2); }
+  if (s.length % 2 == 0) { return `0x${s}`; }
+  else { return `0x0${s}`; }
+}
 
 contract('Relay', (accounts) => {
   assert(accounts.length > 0);
@@ -284,43 +291,51 @@ contract('Relay', (accounts) => {
 
   describe('User: Withdraw tokens on chain A', () => {
     it('Should get the signature for the deposit', async () => {
-      const txParams = {
-        nonce: parseInt(deposit.nonce).toString(16),
-        gasPrice: parseInt(deposit.gasPrice).toString(16),
-        to: deposit.to,
-        value: parseInt(deposit.value).toString(16),
-        data: deposit.input,
-      };
-      const tx = new EthereumTx(txParams)
-      tx.sign(Buffer.from(wallets[1][1].slice(2), 'hex'));
-      deposit.v = tx.v.toString('hex');
-      deposit.s = tx.s.toString('hex');
-      deposit.r = tx.r.toString('hex');
-      assert(deposit.v.length === 2);
-      assert(deposit.s.length === 64);
-      assert(deposit.r.length === 64);
+       const txParams = {
+         nonce: parseInt(deposit.nonce).toString(16),
+         gasPrice: parseInt(deposit.gasPrice).toString(16),
+         to: deposit.to,
+         value: parseInt(deposit.value).toString(16),
+         data: deposit.input,
+       };
+       const tx = new EthereumTx(txParams)
+       tx.sign(Buffer.from(wallets[1][1].slice(2), 'hex'));
+       deposit.v = tx.v.toString('hex');
+       deposit.s = tx.s.toString('hex');
+       deposit.r = tx.r.toString('hex');
+       assert(deposit.v.length === 2);
+       assert(deposit.s.length === 64);
+       assert(deposit.r.length === 64);
+       // Need to edit the transactions in the block to include signatures.
+       depositBlock.transactions[0].v = parseInt(deposit.v)+27;
+       depositBlock.transactions[0].r = `0x${deposit.r}`;
+       depositBlock.transactions[0].s = `0x${deposit.s}`;
     });
 
 
-    // it('test', async () => {
-        // Need to spoof the transaction params lol
+    it('test', async () => {
+      const proof = await txProof.build(deposit, depositBlock);
+      const path = proof.path;
+      const parentNodes = proof.parentNodes;
+      //
+      // console.log('path', path)
+      // console.log('parentNodes', parentNodes)
 
-    //   const proof = await txProof.build(deposit, depositBlock);
-    //   // console.log('proof', proof)
-    //   let txbytes = `0x${leftPad(deposit.nonce.toString(16), 64, '0')}`
-    //   txbytes += leftPad(deposit.gasPrice.toString(16), 64, '0');
-    //   txbytes += leftPad(deposit.gas.toString(16), 64, '0');
-    //   txbytes += leftPad(deposit.value.toString(16), 64, '0');
-    //   // These are placeholds. Need to get s and r values
-    //   txbytes +=  'e435309291e7f9964f03db7dd55c22764db5e1c49b3ad3375998e37904f10d88';
-    //   txbytes +=  '00efc85092f59462235775aa5ee2bbf7e61e102ae94d3285af504a0986a2faae';
-    //   console.log('txBytes', txbytes)
-    //   const path = `0x${rlp.encode(proof.path).toString('hex')}`;
-    //   const parentNodes = `0x${rlp.encode(proof.parentNodes).toString('hex')}`;
-    //   const test = await relayA.prepWithdraw([tokenB.options.address, relayB.options.address], 5,
-    //     1, depositBlock.transactionsRoot, txbytes, path, parentNodes);
-    //   console.log('test', test)
-    // })
+      const nonce = ensureByte(`0x${parseInt(deposit.nonce).toString(16)}`);
+      const gasPrice = ensureByte(`0x${parseInt(deposit.gasPrice).toString(16)}`);
+      const gas = ensureByte(`0x${parseInt(deposit.gas).toString(16)}`);
+
+      const test = await relayA.prepWithdraw(nonce, gasPrice, gas,
+        deposit.v, deposit.r, deposit.s,
+        [tokenB.options.address, relayB.options.address], 5,
+        depositBlock.transactionsRoot, path, parentNodes);
+      console.log('\n\n\n\n')
+      console.log('nonce', nonce)
+      console.log('gasPrice', gasPrice)
+      console.log('\n')
+      console.log('test', test)
+      console.log('rlp.encode', rlp.encode([nonce, gasPrice]).toString('hex'))
+    })
 
 
     it('Should prepare the withdrawal with the transaction data (accounts[1])', async () => {

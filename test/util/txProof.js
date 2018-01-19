@@ -12,9 +12,14 @@ exports.build = build;
 function build(tx, block) {
   return new Promise((resolve, reject) => {
     let txTrie = new Trie();
+    // console.log('block', block);
     async.map(block.transactions, (siblingTx, cb) => {
+      // console.log('siblingTx', siblingTx)
       let path = rlp.encode(siblingTx.transactionIndex);
-      const rawSignedSiblingTx = new EthereumTx(squanchTx(siblingTx)).serialize();
+      const signedSiblingTx = new EthereumTx(squanchTx(siblingTx));
+      // console.log('signedSiblingTx.raw', signedSiblingTx.raw);
+      // console.log('rlpencoded', rlp.encode(signedSiblingTx.raw).toString('hex'));
+      const rawSignedSiblingTx = signedSiblingTx.serialize();
       txTrie.put(path, rawSignedSiblingTx, (err) => {
         if (err) { cb(err, null); }
         cb(null, true);
@@ -29,7 +34,14 @@ function build(tx, block) {
           path: rlp.encode(tx.transactionIndex),
           value: rlp.decode(rawTxNode.value),
         }
-        return resolve(prf)
+        const proof = {
+          path: '0x00' + prf.path.toString('hex'),
+          parentNodes: '0x' + rlp.encode(prf.parentNodes).toString('hex'),
+          value: '0x' + rlp.encode(prf.value).toString('hex'),
+        }
+        // console.log('proof', proof)
+        // console.log('tx.transactionIndex', tx.transactionIndex)
+        return resolve(proof)
       })
     })
   })
@@ -45,8 +57,11 @@ var getRawHeader = (_block) => {
 }
 
 var squanchTx = (tx) => {
-  tx.gasPrice = '0x' + tx.gasPrice.toString(16)
-  tx.value = '0x' + tx.value.toString(16)
+  tx.gas = '0x' + parseInt(tx.gas).toString(16);
+  tx.gasPrice = '0x' + parseInt(tx.gasPrice).toString(16);
+  tx.value = '0x' + parseInt(tx.value).toString(16) || '0';
+  tx.data = tx.input;
+  console.log(tx)
   return tx;
 }
 
