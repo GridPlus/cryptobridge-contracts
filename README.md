@@ -28,6 +28,18 @@ Finally, you need to install the `tokens` package:
 truffle install tokens
 ```
 
+## Booting Parity Networks
+
+Unfortunately, TestRPC/Ganache are incompatible with these tests because they do not provide `v`, `r`, `s` signature parameters for transactions. I have
+submitted an [issue](https://github.com/trufflesuite/ganache/issues/294) but in the meantime we can use parity. I have included a convenience script to
+boot multiple parity instances with one command. All instances will have instant sealing. Unfortunately, this will be a lot slower than using TestRPC/Ganache, but it should still work.
+
+In order to run the tests, start parity with:
+
+```
+npm run parity 7545 8545
+```
+
 ## Testing
 
 In order to run the tests, you need to have two Ethereum clients running and specified in `truffle.js` (default on ports `7545` and `8545`).

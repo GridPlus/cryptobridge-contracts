@@ -34,13 +34,6 @@ function build(tx, block) {
           path: rlp.encode(tx.transactionIndex),
           value: rawTxNode.value,
         }
-        // const proof = {
-        //   path: '0x00' + prf.path.toString('hex'),
-        //   parentNodes: '0x' + rlp.encode(prf.parentNodes).toString('hex'),
-        //   value: '0x' + rlp.encode(prf.value).toString('hex'),
-        // }
-        // console.log('proof', proof)
-        // console.log('tx.transactionIndex', tx.transactionIndex)
         return resolve(prf)
       })
     })
