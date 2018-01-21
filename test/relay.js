@@ -290,70 +290,58 @@ contract('Relay', (accounts) => {
   })
   */
   describe('User: Withdraw tokens on chain A', () => {
-    it('Should get the signature for the deposit', async () => {
-       const txParams = {
-         nonce: parseInt(deposit.nonce).toString(16),
-         gasPrice: parseInt(deposit.gasPrice).toString(16),
-         to: deposit.to,
-         value: parseInt(deposit.value).toString(16),
-         data: deposit.input,
-       };
-       const tx = new EthereumTx(txParams)
-       tx.sign(Buffer.from(wallets[1][1].slice(2), 'hex'));
-       deposit.v = tx.v.toString('hex');
-       deposit.s = tx.s.toString('hex');
-       deposit.r = tx.r.toString('hex');
-       assert(deposit.v.length === 2);
-       assert(deposit.s.length === 64);
-       assert(deposit.r.length === 64);
-       // Need to edit the transactions in the block to include signatures.
-       depositBlock.transactions[0].v = parseInt(deposit.v)+27;
-       depositBlock.transactions[0].r = `0x${deposit.r}`;
-       depositBlock.transactions[0].s = `0x${deposit.s}`;
-    });
+    // it('Should get the signature for the deposit', async () => {
+    //    const txParams = {
+    //      nonce: parseInt(deposit.nonce).toString(16),
+    //      gasPrice: parseInt(deposit.gasPrice).toString(16),
+    //      to: deposit.to,
+    //      value: parseInt(deposit.value).toString(16),
+    //      data: deposit.input,
+    //    };
+    //    const tx = new EthereumTx(txParams)
+    //    tx.sign(Buffer.from(wallets[1][1].slice(2), 'hex'));
+    //    deposit.v = tx.v.toString('hex');
+    //    deposit.s = tx.s.toString('hex');
+    //    deposit.r = tx.r.toString('hex');
+    //    assert(deposit.v.length === 2);
+    //    assert(deposit.s.length === 64);
+    //    assert(deposit.r.length === 64);
+    //    // Need to edit the transactions in the block to include signatures.
+    //    depositBlock.transactions[0].v = parseInt(deposit.v)+27;
+    //    depositBlock.transactions[0].r = `0x${deposit.r}`;
+    //    depositBlock.transactions[0].s = `0x${deposit.s}`;
+    // });
 
 
-    it('test', async () => {
+    it('Should prepare the withdrawal with the transaction data (accounts[1])', async () => {
       const proof = await txProof.build(deposit, depositBlock);
-      const path = proof.path;
-      const parentNodes = proof.parentNodes;
 
       const nonce = ensureByte(`0x${parseInt(deposit.nonce).toString(16)}`);
       const gasPrice = ensureByte(`0x${parseInt(deposit.gasPrice).toString(16)}`);
       const gas = ensureByte(`0x${parseInt(deposit.gas).toString(16)}`);
-      const v = ensureByte(`0x${(parseInt(deposit.v) + 27).toString(16)}`);
-      const r = ensureByte(`0x${deposit.r}`);
-      const s = ensureByte(`0x${deposit.s}`);
-      console.log('path', path)
-      console.log('parentNodes', parentNodes);
+
+      // NOTE: Parity changes this from the typical value because of EIP155
+      // TODO: Resolve this difference in solidity
+      const v = ensureByte(`0x${(parseInt(deposit.standardV) + 27).toString(16)}`);
 
       // Make sure we are RLP encoding the transaction correctly. `encoded` corresponds
       // to what Solidity calculates.
-      const encoded = rlp.encode([nonce, gasPrice, gas, relayB.options.address, '', deposit.input, v, r, s]).toString('hex');
-      console.log('encoded', encoded)
-      console.log('proof.value', proof.value.toString('hex'))
-      assert(encoded === proof.value.toString('hex'), 'Tx RLP encoding incorrect');
+      const encodedTest = rlp.encode([nonce, gasPrice, gas, relayB.options.address, '', deposit.input, deposit.v, deposit.r, deposit.s]).toString('hex');
+      const encodedValue = rlp.encode(proof.value).toString('hex');
+      assert(encodedTest == encodedValue, 'Tx RLP encoding incorrect');
 
-      const test = await relayA.prepWithdraw(nonce, gasPrice, gas, v, r, s,
-        [deposit.to, tokenB.options.address, relayA.address], 5,
-        depositBlock.transactionsRoot, path.toString('hex'), parentNodes.toString('hex'));
-      console.log('test', test)
+      // Check the proof in JS first
+      const checkpoint = txProof.verifyTx(proof);
+      assert(checkpoint === true);
+
+
+      // const test = await relayA.prepWithdraw(nonce, gasPrice, gas, v, r, s,
+      //   [deposit.to, tokenB.options.address, relayA.address], 5,
+      //   depositBlock.transactionsRoot, path.toString('hex'), parentNodes.toString('hex'));
+      // console.log('test', test)
 
       // console.log('rlp.encode', rlp.encode([nonce, gasPrice, gas, rlp.encode(relayB.options.address)]).toString('hex'))
     })
-
-
-    it('Should prepare the withdrawal with the transaction data (accounts[1])', async () => {
-
-    });
-
-    it('Should get the transaction Merkle proof for the submitted transaction', () => {
-
-    });
-
-    it('Should get the block header Merkle proof for the relayed header root',  () => {
-
-    });
 
     it('Should submit the required data and make the withdrwal', () => {
 
