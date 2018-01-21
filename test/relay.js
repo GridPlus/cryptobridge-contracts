@@ -334,11 +334,14 @@ contract('Relay', (accounts) => {
       const checkpoint = txProof.verifyTx(proof);
       assert(checkpoint === true);
 
-
-      // const test = await relayA.prepWithdraw(nonce, gasPrice, gas, v, r, s,
-      //   [deposit.to, tokenB.options.address, relayA.address], 5,
-      //   depositBlock.transactionsRoot, path.toString('hex'), parentNodes.toString('hex'));
-      // console.log('test', test)
+      const path = ensureByte(rlp.encode(proof.path).toString('hex'));
+      const parentNodes = ensureByte(rlp.encode(proof.parentNodes).toString('hex'));
+      console.log('path', path)
+      console.log('parentNodes', parentNodes);
+      const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
+        [deposit.to, tokenB.options.address, relayA.address], 5,
+        depositBlock.transactionsRoot, path, parentNodes, 0);
+      console.log('test', test)
 
       // console.log('rlp.encode', rlp.encode([nonce, gasPrice, gas, rlp.encode(relayB.options.address)]).toString('hex'))
     })

@@ -7,8 +7,6 @@ import "tokens/contracts/eip20/EIP20.sol";
 
 contract Relay {
 
-
-
   //helpers
   function toBytes(address a) constant returns (bytes b) {
       assembly {
@@ -220,30 +218,14 @@ contract Relay {
   // block header.
   //
   // addrs = [to, token, fromChain]
+  //
+  // netVersion is for EIP155 - v = netVersion*2 + 35 or netVersion*2 + 36
+  // This can be found in a web3 console with web3.version.network
   function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v,
-    bytes r, bytes s, address[3] addrs,
-    uint256 amount, bytes32 txRoot, bytes path, bytes parentNodes)
-    public constant returns (bytes) {
-    // Form the transaction data. It should be [token, fromChain, amount]
-/*
-    bytes memory txSub = RLPEncode.encodeBytes(
-      BytesLib.concat(
-        hex"a340f549",
-        BytesLib.concat(encodeAddress(addrs[0]),
-        BytesLib.concat(encodeAddress(addrs[1]),
-        toBytes(amount)
-      )))
-    );
+  bytes r, bytes s, address[3] addrs, uint256 amount, bytes32 txRoot, bytes path,
+  bytes parentNodes, uint256 netVersion) public {
 
-    bytes memory rawTx = BytesLib.concat(data1,
-      BytesLib.concat(RLPEncode.encodeBytes(encodeAddress(addrs[1])),
-      BytesLib.concat(hex"80",
-      txSub
-    )));
-
-    bytes memory rawTx2 = */
-    //))));
-
+    // Form the transaction data.
     bytes[] memory rawTx = new bytes[](9);
     rawTx[0] = nonce;
     rawTx[1] = gasPrice;
@@ -260,17 +242,26 @@ contract Relay {
     rawTx[6] = v;
     rawTx[7] = r;
     rawTx[8] = s;
-
     bytes memory tx = RLPEncode.encodeList(rawTx);
-    // Make sure this transaction is the value on the path via a MerklePatricia proof
-    /*assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);*/
-    return tx;
 
-    /*Withdrawal memory w;
+    // Make sure this transaction is the value on the path via a MerklePatricia proof
+    assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);
+
+    // Ensure v,r,s belong to msg.sender
+    // We want standardV as either 27 or 28
+    /*uint8 standardV;
+    if (netVersion > 0) {
+      standardV = uint8(v - (netVersion / 2) - 7);
+      assert(msg.sender == ecrecover(keccak256(tx), standardV, r, s));
+    } else {
+      standardV = uint8(v);
+    }*/
+
+    Withdrawal memory w;
     w.token = addrs[0];
     w.amount = amount;
     w.txRoot = txRoot;
-    pendingWithdrawals[msg.sender] = w;*/
+    pendingWithdrawals[msg.sender] = w;
   }
 
   // To withdraw a token, the user needs to perform three proofs:
