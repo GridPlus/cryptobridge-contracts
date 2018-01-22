@@ -73,23 +73,27 @@ library BytesLib {
         return tempBytes;
     }
 
-    function toUint256(bytes b) internal constant returns (uint256) {
-      uint256 result = 0;
-      for (uint64 i = 0; i < b.length; i++) {
-        uint256 c = uint8(b[i]);
-        if (c >= 48 && c <= 57) {
-          result = result * 10 + (c - 48);
-        }
-      }
+    // Pad a bytes array to 32 bytes
+    function leftPad(bytes _bytes) internal pure returns (bytes) {
+      bytes memory newBytes = new bytes(32 - _bytes.length);
+      return concat(newBytes, _bytes);
     }
 
-    function toUint8(bytes b) internal constant returns (uint8) {
-      uint8 result = 0;
-      for (uint64 i = 0; i < b.length; i++) {
-        uint8 c = uint8(b[i]);
-        if (c >= 48 && c <= 57) {
-          result = result * 10 + (c - 48);
-        }
+    function toBytes32(bytes b) internal pure returns (bytes32) {
+      bytes32 out;
+      for (uint i = 0; i < 32; i++) {
+        out |= bytes32(b[i] & 0xFF) >> (i * 8);
       }
+      return out;
     }
+
+    function toUint(bytes _bytes, uint _start) internal pure returns (uint256) {
+      require(_bytes.length >= (_start + 32));
+      uint256 tempUint;
+      assembly {
+        tempUint := mload(add(add(_bytes, 0x20), _start))
+      }
+      return tempUint;
+    }
+
 }

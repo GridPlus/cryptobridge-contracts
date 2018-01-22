@@ -46,6 +46,7 @@ let headers;
 let headerRoot;
 let sigs = [];
 let gasPrice = 10 ** 9;
+let successfulTxs = [];
 
 // Parameters that can be changed throughout the process
 let proposer;
@@ -237,6 +238,7 @@ contract('Relay', (accounts) => {
       assert(parseInt(balance) === 0);
       deposit = await web3B.eth.getTransaction(_deposit.transactionHash);
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
+      successfulTxs.push(_deposit.transactionHash)
     });
   })
   /*
@@ -312,6 +314,14 @@ contract('Relay', (accounts) => {
     //    depositBlock.transactions[0].s = `0x${deposit.s}`;
     // });
 
+    it('Should check that the deposit txParams hash was signed by accounts[0]', async () => {
+      // Check that the txParams hash was signed by accounts[0]
+      const signedDeposit = deposit;
+      signedDeposit.value = '';
+      const ethtx = new EthereumTx(signedDeposit)
+      const ethtxhash = ethtx.hash(false).toString('hex')
+    });
+
 
     it('Should prepare the withdrawal with the transaction data (accounts[1])', async () => {
       const proof = await txProof.build(deposit, depositBlock);
@@ -331,18 +341,18 @@ contract('Relay', (accounts) => {
       assert(checkpoint === true);
 
       // Get the network version
-      // console.log('web3B', web3B)
-      const version = deposit.chainId;
+      const version = parseInt(deposit.chainId);
 
       const path = ensureByte(rlp.encode(proof.path).toString('hex'));
       const parentNodes = ensureByte(rlp.encode(proof.parentNodes).toString('hex'));
-      console.log('deposit.v', deposit.v);
+
       // NOTE: Parity changes this from the typical value because of EIP155
-      const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
-        [deposit.to, tokenB.options.address, relayA.address], 5,
-        depositBlock.transactionsRoot, path, parentNodes, version);
-      console.log('test', parseInt(test))
-      console.log('test string', test.toString())
+      // const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
+      //   [deposit.to, tokenB.options.address, relayA.address], 5,
+      //   depositBlock.transactionsRoot, path, parentNodes, version);
+      // console.log('accounts[1]', accounts[1]);
+      // console.log('test string', test);
+
 
       // console.log('rlp.encode', rlp.encode([nonce, gasPrice, gas, rlp.encode(relayB.options.address)]).toString('hex'))
     })

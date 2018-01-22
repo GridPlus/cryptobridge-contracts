@@ -32,8 +32,9 @@ contract Relay {
 
   // This maps the start block and end block for a given chain to an epoch
   // index (i) and provides the root.
-  event HeaderRoot(address indexed chain, uint256 indexed start,
-    uint256 indexed end, bytes32 root, uint256 i, address proposer);
+  event RootStorage(address indexed chain, uint256 indexed start,
+    uint256 indexed end, bytes32 headerRoot, bytes32 successfulTxRoot,
+    uint256 i, address proposer);
   event Deposit(address indexed user, address indexed toChain,
     address indexed token, uint256 amount);
   event Withdraw(address indexed user, address indexed fromChain,
@@ -89,7 +90,11 @@ contract Relay {
   // sidechain. This also serves as the identity of the chain itself.
   // The associatin between address-id and chain-id is stored off-chain but it
   // must be 1:1 and unique.
-  mapping(address => bytes32[]) headerRoots;
+  // successfulTxRoots are used to mark certain transactions as successful.
+  // There is no way to reference success/failure from the transaction data itself,
+  // so we need to store those too. They are stored in a normal Merkle tree.
+  // The `root` itself is keccak256(headerRoot, successfulTxRoot)
+  mapping(address => bytes32[]) roots;
 
   // Tokens need to be associated between chains. For now, only the admin can
   // create and map tokens on the sidechain to tokens on the main chain
@@ -135,12 +140,12 @@ contract Relay {
 
   // Save a hash to an append-only array of headerRoots associated with the
   // given origin chain address-id.
-  function proposeRoot(bytes32 root, address chainId, uint256 start, uint256 end,
-  bytes sigs) public {
+  function proposeRoots(bytes32 headerRoot, bytes32 successfulTxRoot,
+  address chainId, uint256 start, uint256 end, bytes sigs) public {
     // Make sure enough validators sign off on the proposed header root
-    assert(checkSignatures(root, chainId, start, end, sigs) == true);
+    assert(checkSignatures(headerRoot, chainId, start, end, sigs) == true);
     // Add the header root
-    headerRoots[chainId].push(root);
+    roots[chainId].push(keccak256(headerRoot, successfulTxRoot));
     // Calculate the reward and issue it
     uint256 r = reward.base + reward.a * (end - start);
     // If we exceed the max reward, anyone can propose the header root
@@ -151,7 +156,8 @@ contract Relay {
     }
     msg.sender.transfer(r);
     epochSeed = block.blockhash(block.number);
-    HeaderRoot(chainId, start, end, root, headerRoots[chainId].length, msg.sender);
+    RootStorage(chainId, start, end, headerRoot, successfulTxRoot,
+      roots[chainId].length, msg.sender);
   }
 
   // ===========================================================================
@@ -224,7 +230,7 @@ contract Relay {
   // also serves it in the transaction log under `chainId`
   function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v,
   bytes r, bytes s, address[3] addrs, uint256 amount, bytes32 txRoot, bytes path,
-  bytes parentNodes, uint256 netVersion) public constant returns(uint8) {
+  bytes parentNodes, uint256 netVersion) public constant returns(address) {
 
     // Form the transaction data.
     bytes[] memory rawTx = new bytes[](9);
@@ -250,20 +256,24 @@ contract Relay {
 
     // Ensure v,r,s belong to msg.sender
     // We want standardV as either 27 or 28
-    uint8 standardV;
-    if (netVersion > 0) {
-      standardV = uint8(BytesLib.toUint256(v) - (netVersion / 2) - 7);
-    } else {
-      standardV = BytesLib.toUint8(v);
-    }
-    /*assert(msg.sender == ecrecover(keccak256(tx), standardV, bytes32(r), bytes32(s) ));*/
+    uint8 standardV = getStandardV(v, netVersion);
+    return ecrecover(keccak256(tx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s));
+    /*assert(msg.sender == ecrecover(keccak256(tx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s)));*/
 
     /*Withdrawal memory w;
     w.token = addrs[0];
     w.amount = amount;
     w.txRoot = txRoot;
     pendingWithdrawals[msg.sender] = w;*/
-    return standardV;
+    /*return sender;*/
+  }
+
+  function getStandardV(bytes v, uint256 netVersion) internal constant returns (uint8) {
+    if (netVersion > 0) {
+      return uint8(BytesLib.toUint(BytesLib.leftPad(v), 0) - (netVersion * 2) - 8);
+    } else {
+      return uint8(BytesLib.toUint(BytesLib.leftPad(v), 0));
+    }
   }
 
   // To withdraw a token, the user needs to perform three proofs:
@@ -378,7 +388,7 @@ contract Relay {
       assert(valTmp != getProposer());
       // Unfortunately we need to loop through the cache to make sure there are
       // no signature duplicates. This is the most efficient way to do it since
-      // storage costs too much.
+      // storage costs too much.s
       for (uint64 j = 0; j < (i - 32) / 96; j += 1) {
         assert(passing[j] != valTmp);
       }
