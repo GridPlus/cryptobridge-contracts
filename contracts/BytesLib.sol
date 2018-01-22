@@ -72,4 +72,24 @@ library BytesLib {
 
         return tempBytes;
     }
+
+    function toUint256(bytes b) internal constant returns (uint256) {
+      uint256 result = 0;
+      for (uint64 i = 0; i < b.length; i++) {
+        uint256 c = uint8(b[i]);
+        if (c >= 48 && c <= 57) {
+          result = result * 10 + (c - 48);
+        }
+      }
+    }
+
+    function toUint8(bytes b) internal constant returns (uint8) {
+      uint8 result = 0;
+      for (uint64 i = 0; i < b.length; i++) {
+        uint8 c = uint8(b[i]);
+        if (c >= 48 && c <= 57) {
+          result = result * 10 + (c - 48);
+        }
+      }
+    }
 }

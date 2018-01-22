@@ -320,10 +320,6 @@ contract('Relay', (accounts) => {
       const gasPrice = ensureByte(`0x${parseInt(deposit.gasPrice).toString(16)}`);
       const gas = ensureByte(`0x${parseInt(deposit.gas).toString(16)}`);
 
-      // NOTE: Parity changes this from the typical value because of EIP155
-      // TODO: Resolve this difference in solidity
-      const v = ensureByte(`0x${(parseInt(deposit.standardV) + 27).toString(16)}`);
-
       // Make sure we are RLP encoding the transaction correctly. `encoded` corresponds
       // to what Solidity calculates.
       const encodedTest = rlp.encode([nonce, gasPrice, gas, relayB.options.address, '', deposit.input, deposit.v, deposit.r, deposit.s]).toString('hex');
@@ -334,14 +330,19 @@ contract('Relay', (accounts) => {
       const checkpoint = txProof.verifyTx(proof);
       assert(checkpoint === true);
 
+      // Get the network version
+      // console.log('web3B', web3B)
+      const version = deposit.chainId;
+
       const path = ensureByte(rlp.encode(proof.path).toString('hex'));
       const parentNodes = ensureByte(rlp.encode(proof.parentNodes).toString('hex'));
-      console.log('path', path)
-      console.log('parentNodes', parentNodes);
+      console.log('deposit.v', deposit.v);
+      // NOTE: Parity changes this from the typical value because of EIP155
       const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
         [deposit.to, tokenB.options.address, relayA.address], 5,
-        depositBlock.transactionsRoot, path, parentNodes, 0);
-      console.log('test', test)
+        depositBlock.transactionsRoot, path, parentNodes, version);
+      console.log('test', parseInt(test))
+      console.log('test string', test.toString())
 
       // console.log('rlp.encode', rlp.encode([nonce, gasPrice, gas, rlp.encode(relayB.options.address)]).toString('hex'))
     })

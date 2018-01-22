@@ -220,10 +220,11 @@ contract Relay {
   // addrs = [to, token, fromChain]
   //
   // netVersion is for EIP155 - v = netVersion*2 + 35 or netVersion*2 + 36
-  // This can be found in a web3 console with web3.version.network
+  // This can be found in a web3 console with web3.version.network. Parity
+  // also serves it in the transaction log under `chainId`
   function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v,
   bytes r, bytes s, address[3] addrs, uint256 amount, bytes32 txRoot, bytes path,
-  bytes parentNodes, uint256 netVersion) public {
+  bytes parentNodes, uint256 netVersion) public constant returns(uint8) {
 
     // Form the transaction data.
     bytes[] memory rawTx = new bytes[](9);
@@ -249,19 +250,20 @@ contract Relay {
 
     // Ensure v,r,s belong to msg.sender
     // We want standardV as either 27 or 28
-    /*uint8 standardV;
+    uint8 standardV;
     if (netVersion > 0) {
-      standardV = uint8(v - (netVersion / 2) - 7);
-      assert(msg.sender == ecrecover(keccak256(tx), standardV, r, s));
+      standardV = uint8(BytesLib.toUint256(v) - (netVersion / 2) - 7);
     } else {
-      standardV = uint8(v);
-    }*/
+      standardV = BytesLib.toUint8(v);
+    }
+    /*assert(msg.sender == ecrecover(keccak256(tx), standardV, bytes32(r), bytes32(s) ));*/
 
-    Withdrawal memory w;
+    /*Withdrawal memory w;
     w.token = addrs[0];
     w.amount = amount;
     w.txRoot = txRoot;
-    pendingWithdrawals[msg.sender] = w;
+    pendingWithdrawals[msg.sender] = w;*/
+    return standardV;
   }
 
   // To withdraw a token, the user needs to perform three proofs:
