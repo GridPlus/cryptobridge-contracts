@@ -11,8 +11,10 @@ const txProof = require('./util/txProof.js');
 const rlp = require('rlp');
 const blocks = require('./util/blocks.js');
 const val = require('./util/val.js');
-const Token = artifacts.require('HumanStandardToken.sol'); // EPM package
+const Token = artifacts.require('EIP20.sol'); // EPM package
 const Relay = artifacts.require('./Relay');
+const EthereumTx = require('ethereumjs-tx');
+const EthUtil = require('ethereumjs-util');
 
 // Need two of these
 const _providerA = `http://${truffleConf.development.host}:${truffleConf.development.port}`;
@@ -27,8 +29,8 @@ const epB = new EthProof(providerB);
 // ABI and bytes for interacting with web3B
 const relayABI = require('../build/contracts/Relay.json').abi;
 const relayBytes = require('../build/contracts/Relay.json').bytecode;
-const tokenABI = require('../build/contracts/HumanStandardToken.json').abi;
-const tokenBytes = require('../build/contracts/HumanStandardToken.json').bytecode;
+const tokenABI = require('../build/contracts/EIP20.json').abi;
+const tokenBytes = require('../build/contracts/EIP20.json').bytecode;
 const merkleLibBytes = require('../build/contracts/MerklePatriciaProof.json').bytecode;
 
 // Global variables (will be references throughout the tests)
@@ -45,9 +47,17 @@ let headers;
 let headerRoot;
 let sigs = [];
 let gasPrice = 10 ** 9;
+let successfulTxs = [];
 
 // Parameters that can be changed throughout the process
 let proposer;
+
+// left-pad half-bytes
+function ensureByte(s) {
+  if (s.substr(0, 2) == '0x') { s = s.slice(2); }
+  if (s.length % 2 == 0) { return `0x${s}`; }
+  else { return `0x0${s}`; }
+}
 
 contract('Relay', (accounts) => {
   assert(accounts.length > 0);
@@ -226,28 +236,11 @@ contract('Relay', (accounts) => {
       const _deposit = await relayB.methods.deposit(tokenB.options.address, relayA.address, 5)
         .send({ from: accounts[1] })
       const balance = await tokenB.methods.balanceOf(accounts[1]).call();
-      assert(parseInt(balance) === 0);
+      //assert(parseInt(balance) === 0);
       deposit = await web3B.eth.getTransaction(_deposit.transactionHash);
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
+      successfulTxs.push(_deposit.transactionHash)
     });
-
-    it('test', async () => {
-      const proof = await txProof.build(deposit, depositBlock);
-      // console.log('proof', proof)
-      let txbytes = `0x${leftPad(deposit.nonce.toString(16), 64, '0')}`
-      txbytes += leftPad(deposit.gasPrice.toString(16), 64, '0');
-      txbytes += leftPad(deposit.gas.toString(16), 64, '0');
-      txbytes += leftPad(deposit.value.toString(16), 64, '0');
-      // These are placeholds. Need to get s and r values
-      txbytes +=  'e435309291e7f9964f03db7dd55c22764db5e1c49b3ad3375998e37904f10d88';
-      txbytes +=  '00efc85092f59462235775aa5ee2bbf7e61e102ae94d3285af504a0986a2faae';
-      console.log('txBytes', txbytes)
-      const path = `0x${rlp.encode(proof.path).toString('hex')}`;
-      const parentNodes = `0x${rlp.encode(proof.parentNodes).toString('hex')}`;
-      const test = await relayA.prepWithdraw([tokenB.options.address, relayB.options.address], 5,
-        1, depositBlock.transactionsRoot, txbytes, path, parentNodes);
-      console.log('test', test)
-    })
   })
 
   describe('Stakers: Relay blocks', () => {
@@ -263,7 +256,7 @@ contract('Relay', (accounts) => {
       assert(headerRoot != null);
     });
 
-    it('Should get signatures from stakers for proposed header root and check them', async () => {
+    /*it('Should get signatures from stakers for proposed header root and check them', async () => {
       // Sign and store
       const msg = val.getMsg(headerRoot, relayB.options.address, start, end);
       let sigs = [];
@@ -296,19 +289,56 @@ contract('Relay', (accounts) => {
       const diffBounty = Math.round((bountyStart - bountyEnd) / 10000);
       const diffProposer = Math.round((proposerEnd - proposerStart + gasCost) / 10000);
       assert(diffBounty === diffProposer);
-    });
+    });*/
   })
 
   describe('User: Withdraw tokens on chain A', () => {
-    it('Should prepare the withdrawal with the transaction data (accounts[1])', async () => {
 
+    it('Should check that the deposit txParams hash was signed by accounts[1]', async () => {
+      const unsignedDeposit = deposit;
+      unsignedDeposit.value = '';
+      unsignedDeposit.gasPrice = parseInt(deposit.gasPrice);
+      const ethtx = new EthereumTx(unsignedDeposit);
+      const ethtxhash = ethtx.hash(false);
+      const signingV = parseInt(deposit.standardV) + 27;
+
+      const signerPub = EthUtil.ecrecover(ethtxhash, signingV, deposit.r, deposit.s)
+      const signer = EthUtil.pubToAddress(signerPub).toString('hex');
+      assert(`0x${signer}` === accounts[1]);
     });
 
-    it('Should get the transaction Merkle proof for the submitted transaction', () => {
 
-    });
+   it('Should prepare the withdrawal with the transaction data (accounts[1])', async () => {
+      const proof = await txProof.build(deposit, depositBlock);
+      const path = ensureByte(rlp.encode(proof.path).toString('hex'));
+      const parentNodes = ensureByte(rlp.encode(proof.parentNodes).toString('hex'));
 
-    it('Should get the block header Merkle proof for the relayed header root',  () => {
+      const nonce = ensureByte(`0x${parseInt(deposit.nonce).toString(16)}`);
+      const gasPrice = ensureByte(`0x${parseInt(deposit.gasPrice).toString(16)}`);
+      const gas = ensureByte(`0x${parseInt(deposit.gas).toString(16)}`);
+
+      // Make sure we are RLP encoding the transaction correctly. `encoded` corresponds
+      // to what Solidity calculates.
+      const encodedTest = rlp.encode([nonce, gasPrice, gas, relayB.options.address, '', deposit.input, deposit.v, deposit.r, deposit.s]).toString('hex');
+      const encodedValue = rlp.encode(proof.value).toString('hex');
+      assert(encodedTest == encodedValue, 'Tx RLP encoding incorrect');
+
+      // Check the proof in JS first
+      const checkpoint = txProof.verifyTx(proof);
+      assert(checkpoint === true);
+
+      // Get the network version
+      const version = parseInt(deposit.chainId);
+
+
+      const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
+        [deposit.to, tokenB.options.address, relayA.address], 5,
+        depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 500000 });
+      assert(test.receipt.gasUsed < 500000);
+      console.log('prepWithdraw gas usage:', test.receipt.gasUsed);
+    })
+
+    it('Should prove the state root', () => {
 
     });
 

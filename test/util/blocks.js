@@ -68,6 +68,7 @@ function getRoot(headers) {
   return nodes[0];
 }
 
+
 /*
 // This was fun, but I actually don't need it :|
 // Keeping for reference

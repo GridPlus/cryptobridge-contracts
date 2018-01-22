@@ -1,10 +1,30 @@
 pragma solidity ^0.4.18;
 
 import "./MerklePatriciaProof.sol";
-import "tokens/Token.sol";  // truffle package (install with `truffle install tokens`)
-import "tokens/HumanStandardToken.sol";
+import './RLPEncode.sol';
+import "./BytesLib.sol";
+import "tokens/contracts/eip20/EIP20.sol";
 
 contract Relay {
+
+  //helpers
+  function toBytes(address a) constant returns (bytes b) {
+      assembly {
+        let m := mload(0x40)
+        mstore(add(m, 20), xor(0x140000000000000000000000000000000000000000, a))
+        mstore(0x40, add(m, 52))
+        b := m
+      }
+  }
+
+  function toBytes(uint256 x) returns (bytes b) {
+    b = new bytes(32);
+    assembly { mstore(add(b, 32), x) }
+  }
+
+  function encodeAddress(address a) returns(bytes) {
+    return BytesLib.concat(new bytes(12) , toBytes(a));
+  }
 
   // ===========================================================================
   // GLOBAL VARIABLES
@@ -12,8 +32,9 @@ contract Relay {
 
   // This maps the start block and end block for a given chain to an epoch
   // index (i) and provides the root.
-  event HeaderRoot(address indexed chain, uint256 indexed start,
-    uint256 indexed end, bytes32 root, uint256 i, address proposer);
+  event RootStorage(address indexed chain, uint256 indexed start,
+    uint256 indexed end, bytes32 headerRoot, bytes32 successfulTxRoot,
+    uint256 i, address proposer);
   event Deposit(address indexed user, address indexed toChain,
     address indexed token, uint256 amount);
   event Withdraw(address indexed user, address indexed fromChain,
@@ -69,7 +90,11 @@ contract Relay {
   // sidechain. This also serves as the identity of the chain itself.
   // The associatin between address-id and chain-id is stored off-chain but it
   // must be 1:1 and unique.
-  mapping(address => bytes32[]) headerRoots;
+  // successfulTxRoots are used to mark certain transactions as successful.
+  // There is no way to reference success/failure from the transaction data itself,
+  // so we need to store those too. They are stored in a normal Merkle tree.
+  // The `root` itself is keccak256(headerRoot, successfulTxRoot)
+  mapping(address => bytes32[]) roots;
 
   // Tokens need to be associated between chains. For now, only the admin can
   // create and map tokens on the sidechain to tokens on the main chain
@@ -82,7 +107,7 @@ contract Relay {
 
   // Stake a specified quantity of the staking token
   function stake(uint256 amount) public {
-    HumanStandardToken t = HumanStandardToken(stakeToken);
+    EIP20 t = EIP20(stakeToken);
     t.transferFrom(msg.sender, address(this), amount);
     // We can't have a 0-length stakes array
     if (stakes.length == 0) { stakes.push(s); }
@@ -106,7 +131,7 @@ contract Relay {
     assert(amount <= stakes[stakers[msg.sender]].amount);
     stakes[stakers[msg.sender]].amount -= amount;
     stakeSum -= amount;
-    HumanStandardToken t = HumanStandardToken(stakeToken);
+    EIP20 t = EIP20(stakeToken);
     t.transfer(msg.sender, amount);
     if (stakes[stakers[msg.sender]].amount == 0) {
       delete stakes[stakers[msg.sender]];
@@ -115,12 +140,12 @@ contract Relay {
 
   // Save a hash to an append-only array of headerRoots associated with the
   // given origin chain address-id.
-  function proposeRoot(bytes32 root, address chainId, uint256 start, uint256 end,
-  bytes sigs) public {
+  function proposeRoots(bytes32 headerRoot, bytes32 successfulTxRoot,
+  address chainId, uint256 start, uint256 end, bytes sigs) public {
     // Make sure enough validators sign off on the proposed header root
-    assert(checkSignatures(root, chainId, start, end, sigs) == true);
+    assert(checkSignatures(headerRoot, chainId, start, end, sigs) == true);
     // Add the header root
-    headerRoots[chainId].push(root);
+    roots[chainId].push(keccak256(headerRoot, successfulTxRoot));
     // Calculate the reward and issue it
     uint256 r = reward.base + reward.a * (end - start);
     // If we exceed the max reward, anyone can propose the header root
@@ -131,7 +156,8 @@ contract Relay {
     }
     msg.sender.transfer(r);
     epochSeed = block.blockhash(block.number);
-    HeaderRoot(chainId, start, end, root, headerRoots[chainId].length, msg.sender);
+    RootStorage(chainId, start, end, headerRoot, successfulTxRoot,
+      roots[chainId].length, msg.sender);
   }
 
   // ===========================================================================
@@ -147,7 +173,7 @@ contract Relay {
     if (newToken != address(1)) {
       // Adding ERC20 tokens is stricter. We need to map the total supply.
       assert(newToken != address(0));
-      HumanStandardToken t = HumanStandardToken(newToken);
+      EIP20 t = EIP20(newToken);
       t.transferFrom(msg.sender, address(this), t.totalSupply());
       tokens[fromChain][newToken] = origToken;
     }
@@ -185,7 +211,7 @@ contract Relay {
   // Only tokens for now, but ether may be allowed later.
   function deposit(address token, address toChain, uint256 amount) public payable {
     assert(tokens[toChain][token] != address(0));
-    HumanStandardToken t = HumanStandardToken(token);
+    EIP20 t = EIP20(token);
     t.transferFrom(msg.sender, address(this), amount);
     Deposit(msg.sender, toChain, address(this), amount);
   }
@@ -197,60 +223,59 @@ contract Relay {
   // of this process where the user proves the transaction root goes in the
   // block header.
   //
-  // addrs = [token, fromChain]
-  // txParams (bytes) = [ nonce (32), gasPrice (32), gasLimit (32), value (32), r (32), s (32) ]
-  function prepWithdraw(address[2] addrs, uint256 amount,
-  uint8 v, bytes32 txRoot, bytes txParams, bytes path, bytes parentNodes) public constant returns (bytes) {
-    // Form the transaction data. It should be [token, fromChain, amount]
-    bytes memory txData;
-    bytes memory tx;
-    address token = addrs[0];
-    address fromChain = addrs[1];
-    // Form the raw transaction as a bytes array using the first 100 bytes of the data
-    assembly {
-      tx := mload(0x40)
-      // ==> nonce
-      mstore(tx, 5)
-      //mstore(tx, mload(add(txParams, 0x20)))
-      // ==> gasPrice
-      /*mstore(tx, mload(add(txParams, 0x20)))
-      // ==> gasLimit
-      mstore(tx, mload(add(txParams, 0x40)))
-      // ==> to
-      tx := add(tx, mload(fromChain))
-      // ==> value
-      mstore(tx, mload(add(txParams, 0x60)))
-      // ==> data
-      // Thanks @GNSPS for the txData piece
-      txData := mload(0x40)
-      // Assign 100 bytes for the txParams
-      mstore(0x40, add(txData, 0x84))
-      mstore(txData, 0x64)
-      txData := add(txData, 0x20)
-      // keccak256(deposit(address,address,uint256))[:8] = 0x8340f549
-      mstore(txData, mload(0x8340f549))
-      txData := add(txData, 4)
-      txData := add(txData, mload(amount))
-      txData := add(txData, 0x20)
-      txData := add(txData, mload(fromChain))
-      txData := add(txData, 0x20)
-      txData := add(txData, mload(token))
-      txData := add(txData, 0x20)
-      let L := mload(txData)
-      // ==> r
-      mstore(tx, mload(add(txParams, 0x80)))
-      // ==> s
-      mstore(tx, mload(add(txParams, 0x100)))*/
-    }
-    return tx;
+  // addrs = [to, token, fromChain]
+  //
+  // netVersion is for EIP155 - v = netVersion*2 + 35 or netVersion*2 + 36
+  // This can be found in a web3 console with web3.version.network. Parity
+  // also serves it in the transaction log under `chainId`
+  function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v,
+  bytes r, bytes s, address[3] addrs, uint256 amount, bytes32 txRoot, bytes path,
+  bytes parentNodes, bytes netVersion) public {
+
+    // Form the transaction data.
+    bytes[] memory rawTx = new bytes[](9);
+    rawTx[0] = nonce;
+    rawTx[1] = gasPrice;
+    rawTx[2] = gasLimit;
+    rawTx[3] = toBytes(addrs[0]);
+    // Leave msg.value blank. This means only token-token transfers for now.
+    rawTx[4] = hex"";
+    //8340f549 function signature of "deposit(address,address,uint256)"
+    rawTx[5] = BytesLib.concat(hex"8340f549",
+      BytesLib.concat(encodeAddress(addrs[1]),
+      BytesLib.concat(encodeAddress(addrs[2]),
+      toBytes(amount)
+    )));
+    rawTx[6] = v;
+    rawTx[7] = r;
+    rawTx[8] = s;
+    bytes memory tx = RLPEncode.encodeList(rawTx);
+
     // Make sure this transaction is the value on the path via a MerklePatricia proof
-    /*assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);
+    assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);
+
+    // Ensure v,r,s belong to msg.sender
+    // We want standardV as either 27 or 28
+    uint8 standardV = getStandardV(v, BytesLib.toUint(BytesLib.leftPad(netVersion), 0));
+    rawTx[6] = netVersion;
+    rawTx[7] = hex"";
+    rawTx[8] = hex"";
+    tx = RLPEncode.encodeList(rawTx);
+    assert(msg.sender == ecrecover(keccak256(tx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s)));
 
     Withdrawal memory w;
     w.token = addrs[0];
     w.amount = amount;
     w.txRoot = txRoot;
-    pendingWithdrawals[msg.sender] = w;*/
+    pendingWithdrawals[msg.sender] = w;
+  }
+
+  function getStandardV(bytes v, uint256 netVersion) internal constant returns (uint8) {
+    if (netVersion > 0) {
+      return uint8(BytesLib.toUint(BytesLib.leftPad(v), 0) - (netVersion * 2) - 8);
+    } else {
+      return uint8(BytesLib.toUint(BytesLib.leftPad(v), 0));
+    }
   }
 
   // To withdraw a token, the user needs to perform three proofs:
@@ -276,7 +301,7 @@ contract Relay {
     offset = headerProof(offset, indices[1], fromChain, loc, data);
 
     // If both proofs succeeded, we can make the withdrawal of tokens!
-    HumanStandardToken t = HumanStandardToken(w.token);
+    EIP20 t = EIP20(w.token);
     t.transfer(msg.sender, w.amount);
     Withdraw(msg.sender, fromChain, w.token, w.amount);
     delete pendingWithdrawals[msg.sender];
@@ -365,7 +390,7 @@ contract Relay {
       assert(valTmp != getProposer());
       // Unfortunately we need to loop through the cache to make sure there are
       // no signature duplicates. This is the most efficient way to do it since
-      // storage costs too much.
+      // storage costs too much.s
       for (uint64 j = 0; j < (i - 32) / 96; j += 1) {
         assert(passing[j] != valTmp);
       }
