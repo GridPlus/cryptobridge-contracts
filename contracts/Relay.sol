@@ -230,7 +230,7 @@ contract Relay {
   // also serves it in the transaction log under `chainId`
   function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v,
   bytes r, bytes s, address[3] addrs, uint256 amount, bytes32 txRoot, bytes path,
-  bytes parentNodes, uint256 netVersion) public constant returns(address) {
+  bytes parentNodes, bytes netVersion) public {
 
     // Form the transaction data.
     bytes[] memory rawTx = new bytes[](9);
@@ -256,16 +256,18 @@ contract Relay {
 
     // Ensure v,r,s belong to msg.sender
     // We want standardV as either 27 or 28
-    uint8 standardV = getStandardV(v, netVersion);
-    return ecrecover(keccak256(tx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s));
-    /*assert(msg.sender == ecrecover(keccak256(tx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s)));*/
+    uint8 standardV = getStandardV(v, BytesLib.toUint(BytesLib.leftPad(netVersion), 0));
+    rawTx[6] = netVersion;
+    rawTx[7] = hex"";
+    rawTx[8] = hex"";
+    tx = RLPEncode.encodeList(rawTx);
+    assert(msg.sender == ecrecover(keccak256(tx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s)));
 
-    /*Withdrawal memory w;
+    Withdrawal memory w;
     w.token = addrs[0];
     w.amount = amount;
     w.txRoot = txRoot;
-    pendingWithdrawals[msg.sender] = w;*/
-    /*return sender;*/
+    pendingWithdrawals[msg.sender] = w;
   }
 
   function getStandardV(bytes v, uint256 netVersion) internal constant returns (uint8) {

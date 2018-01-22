@@ -99,7 +99,7 @@ contract('Relay', (accounts) => {
       const admin = await relayA.admin();
       assert(admin == accounts[0]);
     });
-/*
+
     it('Should set the validator threshold to 3', async () => {
       await relayA.updateValidatorThreshold(3);
       const thresh = await relayA.validatorThreshold();
@@ -155,7 +155,7 @@ contract('Relay', (accounts) => {
       proposer = await relayA.getProposer();
       assert(proposer === accounts[1] || proposer === accounts[2] || proposer === accounts[3]);
     });
-    */
+
     it('Should deploy MerkleLib and use it to deploy a relay on chain B', async () => {
       // Deploy the library
       const libReceipt = await web3B.eth.sendTransaction({
@@ -191,7 +191,7 @@ contract('Relay', (accounts) => {
         tokenB.setProvider(providerB);
       })
     });
-/*
+
     it('Should create a new token (token A) on chain A', async () => {
       tokenA = await Token.new(1000, 'TokenA', 0, 'TKA', { from: accounts[0] });
     });
@@ -221,7 +221,7 @@ contract('Relay', (accounts) => {
       const held = await tokenA.balanceOf(relayA.address);
       assert(parseInt(supply) === parseInt(held));
     });
-*/
+
     it('Should give 5 token B to accounts[1]', async () => {
       await tokenB.methods.transfer(accounts[1], 5).send({ from: accounts[0] })
       const balance = await tokenB.methods.balanceOf(accounts[1]).call();
@@ -242,7 +242,7 @@ contract('Relay', (accounts) => {
       successfulTxs.push(_deposit.transactionHash)
     });
   })
-  /*
+
   describe('Stakers: Relay blocks', () => {
     let start;
     let end;
@@ -256,7 +256,7 @@ contract('Relay', (accounts) => {
       assert(headerRoot != null);
     });
 
-    it('Should get signatures from stakers for proposed header root and check them', async () => {
+    /*it('Should get signatures from stakers for proposed header root and check them', async () => {
       // Sign and store
       const msg = val.getMsg(headerRoot, relayB.options.address, start, end);
       let sigs = [];
@@ -289,31 +289,10 @@ contract('Relay', (accounts) => {
       const diffBounty = Math.round((bountyStart - bountyEnd) / 10000);
       const diffProposer = Math.round((proposerEnd - proposerStart + gasCost) / 10000);
       assert(diffBounty === diffProposer);
-    });
+    });*/
   })
-  */
+
   describe('User: Withdraw tokens on chain A', () => {
-    // it('Should get the signature for the deposit', async () => {
-    //    const txParams = {
-    //      nonce: parseInt(deposit.nonce).toString(16),
-    //      gasPrice: parseInt(deposit.gasPrice).toString(16),
-    //      to: deposit.to,
-    //      value: parseInt(deposit.value).toString(16),
-    //      data: deposit.input,
-    //    };
-    //    const tx = new EthereumTx(txParams)
-    //    tx.sign(Buffer.from(wallets[1][1].slice(2), 'hex'));
-    //    deposit.v = tx.v.toString('hex');
-    //    deposit.s = tx.s.toString('hex');
-    //    deposit.r = tx.r.toString('hex');
-    //    assert(deposit.v.length === 2);
-    //    assert(deposit.s.length === 64);
-    //    assert(deposit.r.length === 64);
-    //    // Need to edit the transactions in the block to include signatures.
-    //    depositBlock.transactions[0].v = parseInt(deposit.v)+27;
-    //    depositBlock.transactions[0].r = `0x${deposit.r}`;
-    //    depositBlock.transactions[0].s = `0x${deposit.s}`;
-    // });
 
     it('Should check that the deposit txParams hash was signed by accounts[1]', async () => {
       const unsignedDeposit = deposit;
@@ -321,7 +300,6 @@ contract('Relay', (accounts) => {
       unsignedDeposit.gasPrice = parseInt(deposit.gasPrice);
       const ethtx = new EthereumTx(unsignedDeposit);
       const ethtxhash = ethtx.hash(false);
-      console.log('txParams hash', ethtxhash);
       const signingV = parseInt(deposit.standardV) + 27;
 
       const signerPub = EthUtil.ecrecover(ethtxhash, signingV, deposit.r, deposit.s)
@@ -332,6 +310,8 @@ contract('Relay', (accounts) => {
 
    it('Should prepare the withdrawal with the transaction data (accounts[1])', async () => {
       const proof = await txProof.build(deposit, depositBlock);
+      const path = ensureByte(rlp.encode(proof.path).toString('hex'));
+      const parentNodes = ensureByte(rlp.encode(proof.parentNodes).toString('hex'));
 
       const nonce = ensureByte(`0x${parseInt(deposit.nonce).toString(16)}`);
       const gasPrice = ensureByte(`0x${parseInt(deposit.gasPrice).toString(16)}`);
@@ -350,19 +330,17 @@ contract('Relay', (accounts) => {
       // Get the network version
       const version = parseInt(deposit.chainId);
 
-      const path = ensureByte(rlp.encode(proof.path).toString('hex'));
-      const parentNodes = ensureByte(rlp.encode(proof.parentNodes).toString('hex'));
 
-      // NOTE: Parity changes this from the typical value because of EIP155
-      // const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
-      //   [deposit.to, tokenB.options.address, relayA.address], 5,
-      //   depositBlock.transactionsRoot, path, parentNodes, version);
-      // console.log('accounts[1]', accounts[1]);
-      // console.log('test string', test);
-
-
-      // console.log('rlp.encode', rlp.encode([nonce, gasPrice, gas, rlp.encode(relayB.options.address)]).toString('hex'))
+      const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
+        [deposit.to, tokenB.options.address, relayA.address], 5,
+        depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 500000 });
+      assert(test.receipt.gasUsed < 500000);
+      console.log('prepWithdraw gas usage:', test.receipt.gasUsed);
     })
+
+    it('Should prove the state root', () => {
+
+    });
 
     it('Should submit the required data and make the withdrwal', () => {
 
