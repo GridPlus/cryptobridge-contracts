@@ -329,23 +329,20 @@ contract('Relay', (accounts) => {
       assert(encodedTest == encodedValue, 'Tx RLP encoding incorrect');
 
       // Check the proof in JS first
-      const checkpoint = txProof.verifyTx(proof);
+      const checkpoint = txProof.verify(proof, 4);
       assert(checkpoint === true);
 
       // Get the network version
       const version = parseInt(deposit.chainId);
 
       // Get the receipt proof
-      // const tmp = await web3B.eth.getTransactionReceipt(depositBlockSlim.transactions[0]);
-      // console.log('is there a tx receipt?', tmp)
       const receiptProof = await rProof.buildProof(depositReceipt, depositBlockSlim, web3B);
-      console.log('receiptProof', receiptProof);
-
+      const checkpoint2 = txProof.verify(receiptProof, 5);
+      console.log('value', rlp.encode(receiptProof.value).toString('hex'))
       // Make the transaction
       const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
-        [deposit.to, tokenB.options.address, relayA.address], [5, depositReceipt.gasUsed],
-        [depositBlock.transactionsRoot, depositReceipt.root],
-        path, parentNodes, version, { from: accounts[1], gas: 500000 });
+        [deposit.to, tokenB.options.address, relayA.address], 5,
+        depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 500000 });
       assert(test.receipt.gasUsed < 500000);
       console.log('prepWithdraw gas usage:', test.receipt.gasUsed);
     })

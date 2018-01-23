@@ -45,6 +45,7 @@ var putReceipt = (siblingReceipt, receiptsTrie, cb2) => {//need siblings to rebu
   var rawReceipt;
   if (siblingReceipt.status !== undefined && siblingReceipt.status != null) {
     var status = strToBuf(siblingReceipt.status);
+    console.log('rlp set of logs', rlp.encode([setOfLogs]).toString('hex'))
     rawReceipt = rlp.encode([status, cummulativeGas, bloomFilter, setOfLogs]);
   } else {
     var postTransactionState = strToBuf(siblingReceipt.root)
