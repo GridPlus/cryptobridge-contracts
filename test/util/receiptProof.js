@@ -4,6 +4,7 @@ const Promise = require('bluebird').Promise;
 const Trie = require('merkle-patricia-tree');
 const rlp = require('rlp');
 const async = require('async');
+const EthereumBlock = require('ethereumjs-block/from-rpc');
 
 exports.buildProof = buildProof;
 
@@ -15,21 +16,21 @@ function buildProof(receipt, block, web3) {
       return web3.eth.getTransactionReceipt(siblingTxHash)
     })
     .map((siblingReceipt) => {
-      putReceipt(siblingReceipt, receiptsTrie);
-      return;
+      putReceipt(siblingReceipt, receiptsTrie, () => {
+        return;
+      });
     })
     .then(() => {
-      return resolve(true);
-      // receiptsTrie.findPath(rlp.encode(receipt.transactionIndex), (e,rawReceiptNode,remainder,stack) => {
-      //   var prf = {
-      //     blockHash: Buffer.from(receipt.blockHash.slice(2),'hex'),
-      //     header:    getRawHeader(block),
-      //     parentNodes:     rawStack(stack),
-      //     path:      rlp.encode(receipt.transactionIndex),
-      //     value:     rlp.decode(rawReceiptNode.value)
-      //   }
-      //   return resolve(prf)
-      // })
+      receiptsTrie.findPath(rlp.encode(receipt.transactionIndex), (e,rawReceiptNode,remainder,stack) => {
+        var prf = {
+          blockHash: Buffer.from(receipt.blockHash.slice(2),'hex'),
+          header:    getRawHeader(block),
+          parentNodes:     rawStack(stack),
+          path:      rlp.encode(receipt.transactionIndex),
+          value:     rlp.decode(rawReceiptNode.value)
+        }
+        return resolve(prf)
+      })
     })
     .catch((err) => { return reject(err); });
   })
@@ -38,11 +39,17 @@ function buildProof(receipt, block, web3) {
 var putReceipt = (siblingReceipt, receiptsTrie, cb2) => {//need siblings to rebuild trie
   console.log('putting receipt', siblingReceipt)
   var path = siblingReceipt.transactionIndex
-  var postTransactionState = strToBuf(siblingReceipt.root)
   var cummulativeGas = numToBuf(siblingReceipt.cumulativeGasUsed)
   var bloomFilter = strToBuf(siblingReceipt.logsBloom)
   var setOfLogs = encodeLogs(siblingReceipt.logs)
-  var rawReceipt = rlp.encode([postTransactionState,cummulativeGas,bloomFilter,setOfLogs])
+  var rawReceipt;
+  if (siblingReceipt.status !== undefined && siblingReceipt.status != null) {
+    var status = strToBuf(siblingReceipt.status);
+    rawReceipt = rlp.encode([status, cummulativeGas, bloomFilter, setOfLogs]);
+  } else {
+    var postTransactionState = strToBuf(siblingReceipt.root)
+    rawReceipt = rlp.encode([postTransactionState, cummulativeGas, bloomFilter, setOfLogs])
+  }
 
   receiptsTrie.put(rlp.encode(path), rawReceipt, function (error) {
     error != null ? cb2(error, null) : cb2(error, true)
@@ -77,6 +84,8 @@ var squanchTx = (tx) => {
   tx.value = '0x' + tx.value.toString(16)
   return tx;
 }
+var numToBuf = (input)=>{ return Buffer.from(byteable(input.toString(16)), "hex") }
+var byteable = (input)=>{ return input.length % 2 == 0 ? input : "0" + input }
 var strToBuf = (input)=>{
   if(input.slice(0,2) == "0x"){
     return Buffer.from(byteable(input.slice(2)), "hex")
