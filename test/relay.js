@@ -8,6 +8,7 @@ const truffleConf = require('../truffle.js').networks;
 const Web3 = require('web3');
 const EthProof = require('eth-proof');
 const txProof = require('./util/txProof.js');
+const rProof = require('./util/receiptProof.js');
 const rlp = require('rlp');
 const blocks = require('./util/blocks.js');
 const val = require('./util/val.js');
@@ -43,11 +44,12 @@ let relayB;
 let merkleLibBAddr;
 let deposit;
 let depositBlock;
+let depositBlockSlim; // Contains only tx hashes
+let depositReceipt;
 let headers;
 let headerRoot;
 let sigs = [];
 let gasPrice = 10 ** 9;
-let successfulTxs = [];
 
 // Parameters that can be changed throughout the process
 let proposer;
@@ -165,14 +167,14 @@ contract('Relay', (accounts) => {
       });
       merkleLibBAddr = libReceipt.contractAddress.slice(2).toLowerCase();
       const relayBytesB = relayBytes.replace(/_+MerkleLib_+/g, merkleLibBAddr);
-      const receipt = await web3B.eth.sendTransaction({
+      const txReceipt = await web3B.eth.sendTransaction({
         from: accounts[0],
         data: relayBytesB,
         gas: 7000000,
       });
-      assert(receipt.blockNumber >= 0);
-      relayB = await new web3B.eth.Contract(relayABI, receipt.contractAddress);
-      assert(receipt.contractAddress === relayB.options.address);
+      assert(txReceipt.blockNumber >= 0);
+      relayB = await new web3B.eth.Contract(relayABI, txReceipt.contractAddress);
+      assert(txReceipt.contractAddress === relayB.options.address);
       relayB.setProvider(providerB);
     });
   });
@@ -239,8 +241,10 @@ contract('Relay', (accounts) => {
       //assert(parseInt(balance) === 0);
       deposit = await web3B.eth.getTransaction(_deposit.transactionHash);
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
-      successfulTxs.push(_deposit.transactionHash)
+      depositBlockSlim = await web3B.eth.getBlock(_deposit.blockHash, false);
+      depositReceipt = await web3B.eth.getTransactionReceipt(_deposit.transactionHash);
     });
+
   })
 
   describe('Stakers: Relay blocks', () => {
@@ -319,7 +323,8 @@ contract('Relay', (accounts) => {
 
       // Make sure we are RLP encoding the transaction correctly. `encoded` corresponds
       // to what Solidity calculates.
-      const encodedTest = rlp.encode([nonce, gasPrice, gas, relayB.options.address, '', deposit.input, deposit.v, deposit.r, deposit.s]).toString('hex');
+      const encodedTest = rlp.encode([nonce, gasPrice, gas, relayB.options.address,
+        '', deposit.input, deposit.v, deposit.r, deposit.s]).toString('hex');
       const encodedValue = rlp.encode(proof.value).toString('hex');
       assert(encodedTest == encodedValue, 'Tx RLP encoding incorrect');
 
@@ -330,10 +335,17 @@ contract('Relay', (accounts) => {
       // Get the network version
       const version = parseInt(deposit.chainId);
 
+      // Get the receipt proof
+      // const tmp = await web3B.eth.getTransactionReceipt(depositBlockSlim.transactions[0]);
+      // console.log('is there a tx receipt?', tmp)
+      const receiptProof = await rProof.buildProof(depositReceipt, depositBlockSlim, web3B);
+      console.log('receiptProof', receiptProof);
 
+      // Make the transaction
       const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
-        [deposit.to, tokenB.options.address, relayA.address], 5,
-        depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 500000 });
+        [deposit.to, tokenB.options.address, relayA.address], [5, depositReceipt.gasUsed],
+        [depositBlock.transactionsRoot, depositReceipt.root],
+        path, parentNodes, version, { from: accounts[1], gas: 500000 });
       assert(test.receipt.gasUsed < 500000);
       console.log('prepWithdraw gas usage:', test.receipt.gasUsed);
     })

@@ -224,12 +224,14 @@ contract Relay {
   // block header.
   //
   // addrs = [to, token, fromChain]
+  // amount = [depositAmount, gasUsed]
+  // _roots = [transactionRoot, receiptRoot]
   //
   // netVersion is for EIP155 - v = netVersion*2 + 35 or netVersion*2 + 36
   // This can be found in a web3 console with web3.version.network. Parity
   // also serves it in the transaction log under `chainId`
   function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v,
-  bytes r, bytes s, address[3] addrs, uint256 amount, bytes32 txRoot, bytes path,
+  bytes r, bytes s, address[3] addrs, uint256[2] amounts, bytes32[2] _roots, bytes path,
   bytes parentNodes, bytes netVersion) public {
 
     // Form the transaction data.
@@ -244,7 +246,7 @@ contract Relay {
     rawTx[5] = BytesLib.concat(hex"8340f549",
       BytesLib.concat(encodeAddress(addrs[1]),
       BytesLib.concat(encodeAddress(addrs[2]),
-      toBytes(amount)
+      toBytes(amounts[0])
     )));
     rawTx[6] = v;
     rawTx[7] = r;
@@ -252,7 +254,7 @@ contract Relay {
     bytes memory tx = RLPEncode.encodeList(rawTx);
 
     // Make sure this transaction is the value on the path via a MerklePatricia proof
-    assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);
+    assert(MerklePatriciaProof.verify(tx, path, parentNodes, _roots[0]) == true);
 
     // Ensure v,r,s belong to msg.sender
     // We want standardV as either 27 or 28
@@ -265,8 +267,8 @@ contract Relay {
 
     Withdrawal memory w;
     w.token = addrs[0];
-    w.amount = amount;
-    w.txRoot = txRoot;
+    w.amount = amounts[0];
+    w.txRoot = _roots[0];
     pendingWithdrawals[msg.sender] = w;
   }
 
