@@ -82,6 +82,7 @@ contract Relay {
     address token;
     uint256 amount;
     bytes32 txRoot;
+    bytes32 txHash;
     bytes32 receiptRoot;
   }
   mapping(address => Withdrawal) pendingWithdrawals;
@@ -268,6 +269,7 @@ contract Relay {
     w.token = addrs[0];
     w.amount = amount;
     w.txRoot = txRoot;
+    w.txHash = keccak256(tx);
     pendingWithdrawals[msg.sender] = w;
   }
 
@@ -281,16 +283,29 @@ contract Relay {
 
   // Prove the receipt included in the tx forms the receipt root for the block
   // If the proof works, save the receipt root
-  function proveReceipt(bytes32 receiptRoot, bytes cumulativeGas, bytes logsBloom,
-  bytes setOfLogs, bytes path, bytes parentNodes) public {
+  function proveReceipt(bytes cumulativeGas, bytes logsBloom,
+  bytes encodedLogs, bytes path, bytes parentNodes) public constant returns (bytes) {
+
+    // Make sure the user has a pending withdrawal
     assert(pendingWithdrawals[msg.sender].txRoot != bytes32(0));
+
+    // Make sure this receipt belongs to the user's tx
+    // TODO: Pass two indices that indicate the positions of the tx hash from
+    // within the two logs. Slice that out of the bytes array and make sure it
+    // matches the proposed tx.
+
     bytes[] memory receipt = new bytes[](4);
     receipt[0] = hex"01";
     receipt[1] = cumulativeGas;
     receipt[2] = logsBloom;
-    receipt[3] = setOfLogs;
-    assert(MerklePatriciaProof.verify(RLPEncode.encodeList(receipt), path, parentNodes, receiptRoot) == true);
-    pendingWithdrawals[msg.sender].receiptRoot = receiptRoot;
+    receipt[3] = hex"01";
+    /*receipt[3] = encodedLogs;*/
+
+
+    //
+    /*assert(MerklePatriciaProof.verify(RLPEncode.encodeList(receipt), path, parentNodes, receiptRoot) == true);*/
+    /*pendingWithdrawals[msg.sender].receiptRoot = receiptRoot;*/
+    return RLPEncode.encodeList(receipt);
   }
 
   // To withdraw a token, the user needs to perform three proofs:

@@ -335,20 +335,34 @@ contract('Relay', (accounts) => {
       // Get the network version
       const version = parseInt(deposit.chainId);
 
+      // Make the transaction
+      const prepWithdraw = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
+        [deposit.to, tokenB.options.address, relayA.address], 5,
+        depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 500000 });
+      console.log('prepWithdraw', prepWithdraw)
+      assert(prepWithdraw.receipt.gasUsed < 500000);
+      console.log('prepWithdraw gas usage:', prepWithdraw.receipt.gasUsed);
+    })
+
+    it('Should prove the state root', async () => {
       // Get the receipt proof
       const receiptProof = await rProof.buildProof(depositReceipt, depositBlockSlim, web3B);
       const checkpoint2 = txProof.verify(receiptProof, 5);
-      console.log('value', rlp.encode(receiptProof.value).toString('hex'))
-      // Make the transaction
-      const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
-        [deposit.to, tokenB.options.address, relayA.address], 5,
-        depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 500000 });
-      assert(test.receipt.gasUsed < 500000);
-      console.log('prepWithdraw gas usage:', test.receipt.gasUsed);
-    })
+      const encodedReceiptTest = rlp.encode([depositReceipt.status, depositReceipt.cumulativeGasUsed,
+        depositReceipt.logsBloom, rProof.encodeLogs(depositReceipt.logs)]);
+      const encodedReceiptValue = rlp.encode(receiptProof.value);
 
-    it('Should prove the state root', () => {
+      assert(encodedReceiptTest.equals(encodedReceiptValue) == true);
 
+      console.log('logs', rProof.encodeLogs(depositReceipt.logs))
+      console.log('depositReceipt', deposit)
+      console.log('logsBloom', depositReceipt.logsBloom)
+      // const proveReceipt = await relayA.proveReceipt(depositBlock.receiptsRoot,
+      //   depositReceipt.cumulativeGasUsed, depositReceipt.logsBloom,
+      //   '0x0', receiptProof.path,
+      //   receiptProof.parentNodes, { from: accounts[1], gas: 500000});
+
+      console.log('proveReceipt', proveReceipt);
     });
 
     it('Should submit the required data and make the withdrwal', () => {

@@ -7,11 +7,11 @@ const async = require('async');
 const EthereumBlock = require('ethereumjs-block/from-rpc');
 
 exports.buildProof = buildProof;
+exports.encodeLogs = encodeLogs;
 
 function buildProof(receipt, block, web3) {
   return new Promise((resolve, reject) => {
     var receiptsTrie = new Trie();
-    console.log('receipt', receipt)
     Promise.map(block.transactions, (siblingTxHash) => {
       return web3.eth.getTransactionReceipt(siblingTxHash)
     })
@@ -37,7 +37,6 @@ function buildProof(receipt, block, web3) {
 }
 
 var putReceipt = (siblingReceipt, receiptsTrie, cb2) => {//need siblings to rebuild trie
-  console.log('putting receipt', siblingReceipt)
   var path = siblingReceipt.transactionIndex
   var cummulativeGas = numToBuf(siblingReceipt.cumulativeGasUsed)
   var bloomFilter = strToBuf(siblingReceipt.logsBloom)
@@ -45,7 +44,6 @@ var putReceipt = (siblingReceipt, receiptsTrie, cb2) => {//need siblings to rebu
   var rawReceipt;
   if (siblingReceipt.status !== undefined && siblingReceipt.status != null) {
     var status = strToBuf(siblingReceipt.status);
-    console.log('rlp set of logs', rlp.encode([setOfLogs]).toString('hex'))
     rawReceipt = rlp.encode([status, cummulativeGas, bloomFilter, setOfLogs]);
   } else {
     var postTransactionState = strToBuf(siblingReceipt.root)
@@ -56,7 +54,7 @@ var putReceipt = (siblingReceipt, receiptsTrie, cb2) => {//need siblings to rebu
     error != null ? cb2(error, null) : cb2(error, true)
   })
 }
-var encodeLogs = (input) => {
+function encodeLogs(input) {
   var logs = []
   for (var i = 0; i < input.length; i++) {
     var address = strToBuf(input[i].address);

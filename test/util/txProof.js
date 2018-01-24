@@ -56,13 +56,11 @@ function verify(proof, j) {
   const blockHash = proof.blockHash;
   const txRoot = header[j]; // txRoot is the 4th item in the header Array
   try{
-    console.log('parentNodes', parentNodes)
     var currentNode;
     var len = parentNodes.length;
     var rlpTxFromPrf = parentNodes[len - 1][parentNodes[len - 1].length - 1];
     var nodeKey = txRoot;
     var pathPtr = 0;
-    console.log()
     for (var i = 0 ; i < len ; i++) {
       currentNode = parentNodes[i];
       const encodedNode = Buffer.from(sha3(rlp.encode(currentNode)),'hex');
