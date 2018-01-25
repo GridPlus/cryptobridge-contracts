@@ -316,20 +316,20 @@ contract Relay {
     //   [addrs[1], [ topics[3], topics[4], topics[5], topics[6] ], data[1] ] ]
     bytes[] memory log0 = new bytes[](3);
     bytes[] memory topics0 = new bytes[](3);
-    log0[0] = BytesLib.slice(logs, 0, 32);
-    topics0[0] = BytesLib.slice(logs, 32, 32);
-    topics0[1] = BytesLib.slice(logs, 64, 32);
-    topics0[2] = BytesLib.slice(logs, 96, 32);
+    log0[0] = BytesLib.slice(logs, 0, 20);
+    topics0[0] = BytesLib.slice(logs, 20, 32);
+    topics0[1] = BytesLib.slice(logs, 52, 32);
+    topics0[2] = BytesLib.slice(logs, 84, 32);
     log0[1] = RLPEncode.encodeList(topics0);
-    log0[2] = BytesLib.slice(logs, 128, 32);
+    log0[2] = BytesLib.slice(logs, 116, 32);
     bytes[] memory log1 = new bytes[](3);
     bytes[] memory topics1 = new bytes[](3);
-    log1[0] = BytesLib.slice(logs, 0, 32);
-    topics1[0] = BytesLib.slice(logs, 32, 32);
-    topics1[1] = BytesLib.slice(logs, 64, 32);
-    topics1[2] = BytesLib.slice(logs, 96, 32);
+    log1[0] = BytesLib.slice(logs, 148, 20);
+    topics1[0] = BytesLib.slice(logs, 168, 32);
+    topics1[1] = BytesLib.slice(logs, 200, 32);
+    topics1[2] = BytesLib.slice(logs, 232, 32);
     log1[1] = RLPEncode.encodeList(topics0);
-    log1[2] = BytesLib.slice(logs, 128, 32);
+    log1[2] = BytesLib.slice(logs, 264, 32);
 
 
     // Make sure this receipt belongs to the user's tx
@@ -337,12 +337,12 @@ contract Relay {
     // within the two logs. Slice that out of the bytes array and make sure it
     // matches the proposed tx.
 
-    bytes[] memory receipt = new bytes[](1);
-    /*receipt[0] = hex"01";
-    receipt[1] = cumulativeGas;*/
-    receipt[0] = logsBloom;
+    bytes[] memory receipt = new bytes[](3);
+    receipt[0] = hex"01";
+    receipt[1] = cumulativeGas;
+    receipt[2] = logsBloom;
     /*receipt[3] = RLPEncode.encodeList(log0);*/
-    return RLPEncode.encodeList(receipt);
+    return log1[2];
 
     //
     //assert(MerklePatriciaProof.verify(RLPEncode.encodeList(receipt), path, parentNodes, receiptRoot) == true);

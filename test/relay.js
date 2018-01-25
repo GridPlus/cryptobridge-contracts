@@ -394,8 +394,7 @@ contract('Relay', (accounts) => {
       console.log('gasUsed', depositReceipt.cumulativeGasUsed.toString(16));
       console.log('\ndepositReceipt.logsBloom', depositReceipt.logsBloom);
       const tmp = ['0x1', depositReceipt.cumulativeGasUsed, depositReceipt.logsBloom];
-      // console.log('rlp(test)', rlp.encode(tmp).toString('hex'))
-      console.log('rlp(bloom)', rlp.encode([depositReceipt.logsBloom]).toString('hex'))
+      console.log('rlp(test)', rlp.encode(tmp).toString('hex'))
     });
 
     it('Should submit the required data and make the withdrwal', () => {
