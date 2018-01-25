@@ -22,6 +22,11 @@ contract Relay {
     assembly { mstore(add(b, 32), x) }
   }
 
+  function bytes32ToBytes(bytes32 x) returns (bytes b) {
+    b = new bytes(32);
+    assembly { mstore(add(b, 32), x) }
+  }
+
   function encodeAddress(address a) returns(bytes) {
     return BytesLib.concat(new bytes(12) , toBytes(a));
   }
@@ -283,29 +288,66 @@ contract Relay {
 
   // Prove the receipt included in the tx forms the receipt root for the block
   // If the proof works, save the receipt root
-  function proveReceipt(bytes cumulativeGas, bytes logsBloom,
-  bytes encodedLogs, bytes path, bytes parentNodes) public constant returns (bytes) {
-
+  // Two logs are emitted. Token transfer has 3 topics, Deposit has 4 topics.
+  // Topics are only for the indexed fields.
+  //
+  // ---------------------------------------------------------------------------
+  // logs format (NOTE: this is falttened as input!):
+  // [ [addrs[0], [ topics[0], topics[1], topics[2]], data[0] ],
+  //   [addrs[1], [ topics[3], topics[4], topics[5], topics[6] ], data[1] ] ]
+  // where addrs = [token, relayB]
+  // --------------------------------------------------------------------------
+  // data[2] is the receiptsRoot for the block
+  //function proveReceipt(bytes cumulativeGas, bytes logsBloom, address[2] addrs,
+  //bytes32[3] data, bytes32[7] topics, bytes path, bytes parentNodes)
+  function proveReceipt(bytes logs, bytes cumulativeGas, bytes logsBloom)
+  public constant returns (bytes) {
     // Make sure the user has a pending withdrawal
-    assert(pendingWithdrawals[msg.sender].txRoot != bytes32(0));
+    //assert(pendingWithdrawals[msg.sender].txRoot != bytes32(0));
+
+    // Checks on topics
+    //assert(address(logs[2]) == msg.sender);
+    // TODO: Check that topics[2] and topics[6] correspond to relayB.address
+    //assert(address(logs[7]) == msg.sender);
+    //assert(address(logs[8]) == address(this));
+
+    // Form the logs structure. This is of form:
+    // [ [addrs[0], [ topics[0], topics[1], topics[2]], data[0] ],
+    //   [addrs[1], [ topics[3], topics[4], topics[5], topics[6] ], data[1] ] ]
+    bytes[] memory log0 = new bytes[](3);
+    bytes[] memory topics0 = new bytes[](3);
+    log0[0] = BytesLib.slice(logs, 0, 32);
+    topics0[0] = BytesLib.slice(logs, 32, 32);
+    topics0[1] = BytesLib.slice(logs, 64, 32);
+    topics0[2] = BytesLib.slice(logs, 96, 32);
+    log0[1] = RLPEncode.encodeList(topics0);
+    log0[2] = BytesLib.slice(logs, 128, 32);
+    bytes[] memory log1 = new bytes[](3);
+    bytes[] memory topics1 = new bytes[](3);
+    log1[0] = BytesLib.slice(logs, 0, 32);
+    topics1[0] = BytesLib.slice(logs, 32, 32);
+    topics1[1] = BytesLib.slice(logs, 64, 32);
+    topics1[2] = BytesLib.slice(logs, 96, 32);
+    log1[1] = RLPEncode.encodeList(topics0);
+    log1[2] = BytesLib.slice(logs, 128, 32);
+
 
     // Make sure this receipt belongs to the user's tx
     // TODO: Pass two indices that indicate the positions of the tx hash from
     // within the two logs. Slice that out of the bytes array and make sure it
     // matches the proposed tx.
 
-    bytes[] memory receipt = new bytes[](4);
-    receipt[0] = hex"01";
-    receipt[1] = cumulativeGas;
-    receipt[2] = logsBloom;
-    receipt[3] = hex"01";
-    /*receipt[3] = encodedLogs;*/
-
+    bytes[] memory receipt = new bytes[](1);
+    /*receipt[0] = hex"01";
+    receipt[1] = cumulativeGas;*/
+    receipt[0] = logsBloom;
+    /*receipt[3] = RLPEncode.encodeList(log0);*/
+    return RLPEncode.encodeList(receipt);
 
     //
-    /*assert(MerklePatriciaProof.verify(RLPEncode.encodeList(receipt), path, parentNodes, receiptRoot) == true);*/
-    /*pendingWithdrawals[msg.sender].receiptRoot = receiptRoot;*/
-    return RLPEncode.encodeList(receipt);
+    //assert(MerklePatriciaProof.verify(RLPEncode.encodeList(receipt), path, parentNodes, receiptRoot) == true);
+    //pendingWithdrawals[msg.sender].receiptRoot = receiptRoot;
+    //return RLPEncode.encodeList(receipt);
   }
 
   // To withdraw a token, the user needs to perform three proofs:

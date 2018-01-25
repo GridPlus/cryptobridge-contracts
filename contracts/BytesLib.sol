@@ -73,6 +73,57 @@ library BytesLib {
         return tempBytes;
     }
 
+    function slice(bytes _bytes, uint _start, uint _length) internal  pure returns (bytes) {
+        require(_bytes.length >= (_start + _length));
+
+        bytes memory tempBytes;
+
+        assembly {
+            switch iszero(_length)
+            case 0 {
+                // Get a location of some free memory and store it in tempBytes as
+                // Solidity does for memory variables.
+                tempBytes := mload(0x40)
+
+                // The first word of the slice result is potentially a partial
+                // word read from the original array. To read it, we calculate
+                // the length of that partial word and start copying that many
+                // bytes into the array. The first word we copy will start with
+                // data we don't care about, but the last `lengthmod` bytes will
+                // land at the beginning of the contents of the new array. When
+                // we're done copying, we overwrite the full first word with
+                // the actual length of the slice.
+                let lengthmod := and(_length, 31)
+
+                let mc := add(tempBytes, lengthmod)
+                let end := add(mc, _length)
+
+                for {
+                    let cc := add(add(_bytes, lengthmod), _start)
+                } lt(mc, end) {
+                    mc := add(mc, 0x20)
+                    cc := add(cc, 0x20)
+                } {
+                    mstore(mc, mload(cc))
+                }
+
+                mstore(tempBytes, _length)
+
+                //update free-memory pointer
+                //allocating the array padded to 32 bytes like the compiler does now
+                mstore(0x40, and(add(mc, 31), not(31)))
+            }
+            //if we want a zero-length slice let's just return a zero-length array
+            /*default {
+                tempBytes := mload(0x40)
+
+                mstore(0x40, add(tempBytes, 0x20))
+            }*/
+        }
+
+        return tempBytes;
+    }
+
     // Pad a bytes array to 32 bytes
     function leftPad(bytes _bytes) internal pure returns (bytes) {
       bytes memory newBytes = new bytes(32 - _bytes.length);
@@ -87,6 +138,14 @@ library BytesLib {
       return out;
     }
 
+    function fromBytes32(bytes32 x) internal constant returns (bytes) {
+      bytes memory b = new bytes(32);
+      for (uint i = 0; i < 32; i++) {
+        b[i] = byte(uint8(uint(x) / (2**(8*(19 - i)))));
+      }
+      return b;
+    }
+
     function toUint(bytes _bytes, uint _start) internal pure returns (uint256) {
       require(_bytes.length >= (_start + 32));
       uint256 tempUint;
@@ -94,6 +153,17 @@ library BytesLib {
         tempUint := mload(add(add(_bytes, 0x20), _start))
       }
       return tempUint;
+    }
+
+    function toAddress(bytes _bytes, uint _start) internal  pure returns (address) {
+        require(_bytes.length >= (_start + 20));
+        address tempAddress;
+
+        assembly {
+            tempAddress := div(mload(add(add(_bytes, 0x20), _start)), 0x1000000000000000000000000)
+        }
+
+        return tempAddress;
     }
 
 }

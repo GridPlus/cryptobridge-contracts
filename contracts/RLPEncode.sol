@@ -41,11 +41,22 @@ library RLPEncode {
         lenLen++;
         i *= 0x100;
       }
-      bytes memory firstByte = new bytes(1);
-      firstByte[0] = byte(offset + 55 + lenLen);
-      bytes memory second = new bytes(1);
-      second[0] = byte(L);
-      return BytesLib.concat(firstByte, second);
+			bytes memory prefix0 = getLengthBytes(offset + 55 + lenLen);
+			bytes memory prefix1 = getLengthBytes(L);
+      return BytesLib.concat(prefix0, prefix1);
+    }
+  }
+
+	function getLengthBytes(uint256 x) constant returns (bytes b) {
+		// Figure out if we need 1 or two bytes to express the length.
+		// 1 byte gets us to max 255
+		// 2 bytes gets us to max 65535 (no payloads will be larger than this)
+		uint256 nBytes = 1;
+		if (x > 255) { nBytes = 2; }
+		b = new bytes(nBytes);
+		// Encode the length and return it
+		for (uint i = 0; i < nBytes; i++) {
+      b[i] = byte(uint8(x / (2**(8*(nBytes - 1 - i)))));
     }
   }
 }
