@@ -359,45 +359,23 @@ contract('Relay', (accounts) => {
       let topics = [encodedLogs[0][1], encodedLogs[1][1]];
       let data = [encodedLogs[0][2], encodedLogs[1][2]];
 
-      // console.log('rlp(topics)', rlp.encode(topics).toString('hex'))
-      // console.log('rlp(flat)', rlp.encode([ addrs[0], topics[0], data[0], addrs[1], topics[1], data[1] ]).toString('hex'))
-      // console.log('rlp(set)', rlp.encode([ [addrs[0], topics[0], data[0]], [addrs[1], topics[1], data[1]] ]).toString('hex'))
-      // console.log('relayB.address', relayB.options.address)
-      // console.log('accounts[1]', accounts[1])
-      // console.log('logs', depositReceipt.logs);
-      // console.log('encodedLogs', rProof.encodeLogs(depositReceipt.logs))
-      // console.log('rlp.encode(logs)', rlp.encode(rProof.encodeLogs(depositReceipt.logs)).toString('hex'))
-      //
-      // console.log('\nencodedReceiptTest', encodedReceiptTest.toString('hex'));
-//
-      // console.log('logs', rProof.encodeLogs(depositReceipt.logs))
-      // console.log('depositReceipt', deposit)
-      // console.log('logsBloom', depositReceipt.logsBloom)
-      // const proveReceipt = await relayA.proveReceipt(depositReceipt.cumulativeGasUsed,
-      //   depositReceipt.logsBloom, [tokenB.options.address, relayB.options.address],
-      //   [data[0], data[1], depositBlock.receiptsRoot], [topics[0][0], topics[0][1],
-      //   topics[0][2], topics[1][0], topics[1][1], topics[1][2], topics[1][3]],
-      //   receiptProof.path, receiptProof.parentNodes, { from: accounts[1], gas: 500000});
-      //
       let logsCat = `0x${addrs[0].toString('hex')}${topics[0][0].toString('hex')}`
       logsCat += `${topics[0][1].toString('hex')}${topics[0][2].toString('hex')}`
       logsCat += `${data[0].toString('hex')}${addrs[1].toString('hex')}${topics[1][0].toString('hex')}`
       logsCat += `${topics[1][1].toString('hex')}${topics[1][2].toString('hex')}`
       logsCat += `${topics[1][3].toString('hex')}${data[1].toString('hex')}`;
       // console.log('logsCat', logsCat)
-      console.log('\n\nencodedLogs', encodedLogs, '\n\n')
       const proveReceipt = await relayA.proveReceipt(logsCat, depositReceipt.cumulativeGasUsed,
         depositReceipt.logsBloom, { from: accounts[1], gas: 500000 })
-      // console.log('\nproof.value', rlp.encode(receiptProof.value).toString('hex'))
-      // console.log('topics[0][1]', topics[0][1])
-      // console.log('rlp(test)', rlp.encode(topics[0]).toString('hex'))
+      console.log('\nproof.value', rlp.encode(receiptProof.value).toString('hex'))
+
+
       console.log('\n\n\nproveReceipt', proveReceipt, '\n\n\n');
       console.log('encodedLogs[0][0]', encodedLogs[0][0].toString('hex'))
       console.log('encodedLogs[0][1]][0]', encodedLogs[0][1][0].toString('hex'))
       console.log('encodedLogs[0][1][1]', encodedLogs[0][1][1].toString('hex'))
       console.log('encodedLogs[0][1][2]', encodedLogs[0][1][2].toString('hex'))
       console.log('encodedLogs[0][2]', encodedLogs[0][2].toString('hex'))
-      console.log('rlp(encodedLogs)', rlp.encode(encodedLogs[0]).toString('hex'))
     });
 
     it('Should submit the required data and make the withdrwal', () => {
