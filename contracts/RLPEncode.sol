@@ -27,6 +27,21 @@ library RLPEncode {
     return BytesLib.concat(encodeLength(encoded.length, 192), encoded);
   }
 
+	// Hack to encode nested lists. If you have a list as an item passed here, included
+	// pass = true in that index. E.g.
+	// [item, list, item] --> pass = [false, true, false]
+	function encodeListWithPasses(bytes[] memory self, bool[] pass) internal constant returns (bytes) {
+    bytes memory encoded;
+    for (uint i=0; i < self.length; i++) {
+			if (pass[i] == true) {
+				encoded = BytesLib.concat(encoded, self[i]);
+			} else {
+				encoded = BytesLib.concat(encoded, encodeItem(self[i]));
+			}
+    }
+    return BytesLib.concat(encodeLength(encoded.length, 192), encoded);
+  }
+
   // Generate the prefix for an item or the entire list based on RLP spec
   function encodeLength(uint256 L, uint256 offset) internal constant returns (bytes) {
     if (L < 56) {

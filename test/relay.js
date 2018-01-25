@@ -384,17 +384,20 @@ contract('Relay', (accounts) => {
       logsCat += `${data[0].toString('hex')}${addrs[1].toString('hex')}${topics[1][0].toString('hex')}`
       logsCat += `${topics[1][1].toString('hex')}${topics[1][2].toString('hex')}`
       logsCat += `${topics[1][3].toString('hex')}${data[1].toString('hex')}`;
-      console.log('logsCat', logsCat)
+      // console.log('logsCat', logsCat)
+      console.log('\n\nencodedLogs', encodedLogs, '\n\n')
       const proveReceipt = await relayA.proveReceipt(logsCat, depositReceipt.cumulativeGasUsed,
         depositReceipt.logsBloom, { from: accounts[1], gas: 500000 })
-      console.log('\nproof.value', rlp.encode(receiptProof.value).toString('hex'))
+      // console.log('\nproof.value', rlp.encode(receiptProof.value).toString('hex'))
       // console.log('topics[0][1]', topics[0][1])
       // console.log('rlp(test)', rlp.encode(topics[0]).toString('hex'))
-      console.log('\nproveReceipt', proveReceipt);
-      console.log('gasUsed', depositReceipt.cumulativeGasUsed.toString(16));
-      console.log('\ndepositReceipt.logsBloom', depositReceipt.logsBloom);
-      const tmp = ['0x1', depositReceipt.cumulativeGasUsed, depositReceipt.logsBloom];
-      console.log('rlp(test)', rlp.encode(tmp).toString('hex'))
+      console.log('\n\n\nproveReceipt', proveReceipt, '\n\n\n');
+      console.log('encodedLogs[0][0]', encodedLogs[0][0].toString('hex'))
+      console.log('encodedLogs[0][1]][0]', encodedLogs[0][1][0].toString('hex'))
+      console.log('encodedLogs[0][1][1]', encodedLogs[0][1][1].toString('hex'))
+      console.log('encodedLogs[0][1][2]', encodedLogs[0][1][2].toString('hex'))
+      console.log('encodedLogs[0][2]', encodedLogs[0][2].toString('hex'))
+      console.log('rlp(encodedLogs)', rlp.encode(encodedLogs[0]).toString('hex'))
     });
 
     it('Should submit the required data and make the withdrwal', () => {

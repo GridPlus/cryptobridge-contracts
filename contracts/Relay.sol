@@ -322,27 +322,40 @@ contract Relay {
     topics0[2] = BytesLib.slice(logs, 84, 32);
     log0[1] = RLPEncode.encodeList(topics0);
     log0[2] = BytesLib.slice(logs, 116, 32);
-    bytes[] memory log1 = new bytes[](3);
-    bytes[] memory topics1 = new bytes[](3);
+
+    /*bytes[] memory log1 = new bytes[](3);
+    bytes[] memory topics1 = new bytes[](4);
     log1[0] = BytesLib.slice(logs, 148, 20);
     topics1[0] = BytesLib.slice(logs, 168, 32);
     topics1[1] = BytesLib.slice(logs, 200, 32);
     topics1[2] = BytesLib.slice(logs, 232, 32);
-    log1[1] = RLPEncode.encodeList(topics0);
-    log1[2] = BytesLib.slice(logs, 264, 32);
+    topics1[3] = BytesLib.slice(logs, 264, 32);
+    log1[1] = RLPEncode.encodeList(topics1);
+    log1[2] = BytesLib.slice(logs, 296, 32);*/
 
+    // We need to hack around the RLPEncode library for the topics, which are
+    // nested lists
+    bool[] memory passes = new bool[](3);
+    passes[0] = false;
+    passes[1] = true;
+    passes[2] = false;
+
+    /*bytes[] memory allLogs = new bytes[](2);
+    allLogs[0] = log0;
+    allLogs[1] = log1;*/
+
+    return RLPEncode.encodeListWithPasses(log0, passes);
 
     // Make sure this receipt belongs to the user's tx
     // TODO: Pass two indices that indicate the positions of the tx hash from
     // within the two logs. Slice that out of the bytes array and make sure it
     // matches the proposed tx.
 
-    bytes[] memory receipt = new bytes[](3);
+    /*bytes[] memory receipt = new bytes[](4);
     receipt[0] = hex"01";
     receipt[1] = cumulativeGas;
     receipt[2] = logsBloom;
-    /*receipt[3] = RLPEncode.encodeList(log0);*/
-    return log1[2];
+    return RLPEncode.encodeList(log0);*/
 
     //
     //assert(MerklePatriciaProof.verify(RLPEncode.encodeList(receipt), path, parentNodes, receiptRoot) == true);
