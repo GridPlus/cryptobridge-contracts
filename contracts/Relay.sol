@@ -84,11 +84,11 @@ contract Relay {
   // releases it with a withdraw. It can be overwritten by the user and gets wiped
   // upon withdrawal.
   struct Withdrawal {
-    address token;
-    uint256 amount;
-    bytes32 txRoot;
-    bytes32 txHash;
-    bytes32 receiptRoot;
+    address token;          // Token to withdraw (i.e. the one mapped to deposit)
+    uint256 amount;         // Number of atomic units to withdraw
+    bytes32 txRoot;         // Transactions root for the block housing this tx
+    bytes32 txHash;         // Hash of this tx
+    bytes32 receiptsRoot;   // Receipts root for the block housing this tx
   }
   mapping(address => Withdrawal) pendingWithdrawals;
 
@@ -271,7 +271,8 @@ contract Relay {
     assert(msg.sender == ecrecover(keccak256(tx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s)));
 
     Withdrawal memory w;
-    w.token = addrs[0];
+    w.token = addrs[0]; // This is incorrect. Uncommment line below
+    //w.token = tokens[fromChain][addrs[0]]
     w.amount = amount;
     w.txRoot = txRoot;
     w.txHash = keccak256(tx);
@@ -300,18 +301,12 @@ contract Relay {
   // data[2] is the receiptsRoot for the block
   //function proveReceipt(bytes cumulativeGas, bytes logsBloom, address[2] addrs,
   //bytes32[3] data, bytes32[7] topics, bytes path, bytes parentNodes)
-  function proveReceipt(bytes logs, bytes cumulativeGas, bytes logsBloom)
-  public constant returns (bytes) {
+  function proveReceipt(bytes logs, bytes cumulativeGas, bytes logsBloom,
+  bytes32 receiptsRoot, bytes path, bytes parentNodes) public {
     // Make sure the user has a pending withdrawal
     //assert(pendingWithdrawals[msg.sender].txRoot != bytes32(0));
 
-    // Checks on topics
-    //assert(address(logs[2]) == msg.sender);
-    // TODO: Check that topics[2] and topics[6] correspond to relayB.address
-    //assert(address(logs[7]) == msg.sender);
-    //assert(address(logs[8]) == address(this));
-
-    // Form the logs structure. This is of form:
+    // Encdode the logs. This is of form:
     // [ [addrs[0], [ topics[0], topics[1], topics[2]], data[0] ],
     //   [addrs[1], [ topics[3], topics[4], topics[5], topics[6] ], data[1] ] ]
     bytes[] memory log0 = new bytes[](3);
@@ -332,7 +327,6 @@ contract Relay {
     topics1[3] = BytesLib.slice(logs, 264, 32);
     log1[1] = RLPEncode.encodeList(topics1);
     log1[2] = BytesLib.slice(logs, 296, 32);
-
     // We need to hack around the RLPEncode library for the topics, which are
     // nested lists
     bool[] memory passes = new bool[](4);
@@ -344,12 +338,7 @@ contract Relay {
     allLogs[1] = RLPEncode.encodeListWithPasses(log1, passes);
     passes[0] = true;
 
-
-    // Make sure this receipt belongs to the user's tx
-    // TODO: Pass two indices that indicate the positions of the tx hash from
-    // within the two logs. Slice that out of the bytes array and make sure it
-    // matches the proposed tx.
-
+    // Finally, we can encode the receipt
     bytes[] memory receipt = new bytes[](4);
     receipt[0] = hex"01";
     receipt[1] = cumulativeGas;
@@ -358,12 +347,16 @@ contract Relay {
     passes[0] = false;
     passes[1] = false;
     passes[3] = true;
-    return RLPEncode.encodeListWithPasses(receipt, passes);
 
-    //
-    //assert(MerklePatriciaProof.verify(RLPEncode.encodeList(receipt), path, parentNodes, receiptRoot) == true);
-    //pendingWithdrawals[msg.sender].receiptRoot = receiptRoot;
-    //return RLPEncode.encodeList(receipt);
+    // Checks on topics
+    //assert(BytesLib.toAddress(log0[0], 0) == msg.sender);
+    //assert(BytesLib.toAddress(topics1[1], 0) == msg.sender);
+    //assert(BytesLib.toAddress(topics1[3], 0) == address(this));
+    // TODO: Check that topics[2] and topics[6] correspond to relayB.address
+
+    assert(MerklePatriciaProof.verify(RLPEncode.encodeListWithPasses(receipt, passes),
+      path, parentNodes, receiptsRoot) == true);
+    pendingWithdrawals[msg.sender].receiptsRoot = receiptsRoot;
   }
 
   // To withdraw a token, the user needs to perform three proofs:
