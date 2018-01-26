@@ -8,6 +8,7 @@ const truffleConf = require('../truffle.js').networks;
 const Web3 = require('web3');
 const EthProof = require('eth-proof');
 const txProof = require('./util/txProof.js');
+const rProof = require('./util/receiptProof.js');
 const rlp = require('rlp');
 const blocks = require('./util/blocks.js');
 const val = require('./util/val.js');
@@ -43,11 +44,12 @@ let relayB;
 let merkleLibBAddr;
 let deposit;
 let depositBlock;
+let depositBlockSlim; // Contains only tx hashes
+let depositReceipt;
 let headers;
 let headerRoot;
 let sigs = [];
 let gasPrice = 10 ** 9;
-let successfulTxs = [];
 
 // Parameters that can be changed throughout the process
 let proposer;
@@ -165,14 +167,14 @@ contract('Relay', (accounts) => {
       });
       merkleLibBAddr = libReceipt.contractAddress.slice(2).toLowerCase();
       const relayBytesB = relayBytes.replace(/_+MerkleLib_+/g, merkleLibBAddr);
-      const receipt = await web3B.eth.sendTransaction({
+      const txReceipt = await web3B.eth.sendTransaction({
         from: accounts[0],
         data: relayBytesB,
         gas: 7000000,
       });
-      assert(receipt.blockNumber >= 0);
-      relayB = await new web3B.eth.Contract(relayABI, receipt.contractAddress);
-      assert(receipt.contractAddress === relayB.options.address);
+      assert(txReceipt.blockNumber >= 0);
+      relayB = await new web3B.eth.Contract(relayABI, txReceipt.contractAddress);
+      assert(txReceipt.contractAddress === relayB.options.address);
       relayB.setProvider(providerB);
     });
   });
@@ -207,13 +209,15 @@ contract('Relay', (accounts) => {
     it('Should map token on chain A to the one on chain B', async () => {
       await tokenA.approve(relayA.address, 1000);
       await relayA.addToken(tokenA.address, tokenB.options.address, relayB.options.address)
+      const tkB = await relayA.getTokenMapping(relayB.options.address, tokenB.options.address);
+      assert(tkB.toLowerCase() == tokenA.address.toLowerCase());
     });
 
     it('Should map token on chainB to the one on chain A', async () => {
       await relayB.methods.associateToken(tokenA.address, tokenB.options.address, relayA.address)
         .send({ from: accounts[0] });
-      const associatedToken = await relayB.methods.getTokenMapping(relayA.address, tokenB.options.address).call();
-      assert(associatedToken.toLowerCase() == tokenA.address.toLowerCase());
+      const associatedToken = await relayB.methods.getTokenMapping(relayA.address, tokenA.address).call();
+      assert(associatedToken.toLowerCase() == tokenB.options.address.toLowerCase());
     })
 
     it('Should ensure the relay on chain A has all of the mapped token', async () => {
@@ -223,7 +227,7 @@ contract('Relay', (accounts) => {
     });
 
     it('Should give 5 token B to accounts[1]', async () => {
-      await tokenB.methods.transfer(accounts[1], 5).send({ from: accounts[0] })
+      const r = await tokenB.methods.transfer(accounts[1], 5).send({ from: accounts[0] })
       const balance = await tokenB.methods.balanceOf(accounts[1]).call();
       assert(parseInt(balance) === 5);
     });
@@ -234,13 +238,14 @@ contract('Relay', (accounts) => {
       await tokenB.methods.approve(relayB.options.address, 5).send({ from: accounts[1] })
       const allowance = await tokenB.methods.allowance(accounts[1], relayB.options.address).call();
       const _deposit = await relayB.methods.deposit(tokenB.options.address, relayA.address, 5)
-        .send({ from: accounts[1] })
+        .send({ from: accounts[1], gas: 500000 })
       const balance = await tokenB.methods.balanceOf(accounts[1]).call();
-      //assert(parseInt(balance) === 0);
       deposit = await web3B.eth.getTransaction(_deposit.transactionHash);
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
-      successfulTxs.push(_deposit.transactionHash)
+      depositBlockSlim = await web3B.eth.getBlock(_deposit.blockHash, false);
+      depositReceipt = await web3B.eth.getTransactionReceipt(_deposit.transactionHash);
     });
+
   })
 
   describe('Stakers: Relay blocks', () => {
@@ -319,27 +324,60 @@ contract('Relay', (accounts) => {
 
       // Make sure we are RLP encoding the transaction correctly. `encoded` corresponds
       // to what Solidity calculates.
-      const encodedTest = rlp.encode([nonce, gasPrice, gas, relayB.options.address, '', deposit.input, deposit.v, deposit.r, deposit.s]).toString('hex');
+      const encodedTest = rlp.encode([nonce, gasPrice, gas, relayB.options.address,
+        '', deposit.input, deposit.v, deposit.r, deposit.s]).toString('hex');
       const encodedValue = rlp.encode(proof.value).toString('hex');
       assert(encodedTest == encodedValue, 'Tx RLP encoding incorrect');
 
       // Check the proof in JS first
-      const checkpoint = txProof.verifyTx(proof);
+      const checkpoint = txProof.verify(proof, 4);
       assert(checkpoint === true);
 
       // Get the network version
       const version = parseInt(deposit.chainId);
 
-
-      const test = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
-        [deposit.to, tokenB.options.address, relayA.address], 5,
+      // Make the transaction
+      const prepWithdraw = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
+        [relayB.options.address, tokenB.options.address, relayA.address, tokenA.address], 5,
         depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 500000 });
-      assert(test.receipt.gasUsed < 500000);
-      console.log('prepWithdraw gas usage:', test.receipt.gasUsed);
+      console.log('prepWithdraw gas usage:', prepWithdraw.receipt.gasUsed);
+      assert(prepWithdraw.receipt.gasUsed < 500000);
     })
 
-    it('Should prove the state root', () => {
+    it('Should check the pending withdrawal fields', async () => {
+      const pendingToken = await relayA.getPendingToken(accounts[1]);
+      assert(pendingToken.toLowerCase() == tokenA.address.toLowerCase());
+      const pendingFromChain = await relayA.getPendingFromChain(accounts[1]);
+      assert(pendingFromChain.toLowerCase() == relayB.options.address.toLowerCase());
+    })
 
+    it('Should prove the state root', async () => {
+      // Get the receipt proof
+      const receiptProof = await rProof.buildProof(depositReceipt, depositBlockSlim, web3B);
+      const path = ensureByte(rlp.encode(receiptProof.path).toString('hex'));
+      const parentNodes = ensureByte(rlp.encode(receiptProof.parentNodes).toString('hex'));
+
+      const checkpoint2 = txProof.verify(receiptProof, 5);
+      const encodedLogs = rProof.encodeLogs(depositReceipt.logs);
+      const encodedReceiptTest = rlp.encode([depositReceipt.status, depositReceipt.cumulativeGasUsed,
+        depositReceipt.logsBloom, encodedLogs]);
+      const encodedReceiptValue = rlp.encode(receiptProof.value);
+
+      assert(encodedReceiptTest.equals(encodedReceiptValue) == true);
+      let addrs = [encodedLogs[0][0], encodedLogs[1][0]];
+      let topics = [encodedLogs[0][1], encodedLogs[1][1]];
+      let data = [encodedLogs[0][2], encodedLogs[1][2]];
+
+      let logsCat = `0x${addrs[0].toString('hex')}${topics[0][0].toString('hex')}`
+      logsCat += `${topics[0][1].toString('hex')}${topics[0][2].toString('hex')}`
+      logsCat += `${data[0].toString('hex')}${addrs[1].toString('hex')}${topics[1][0].toString('hex')}`
+      logsCat += `${topics[1][1].toString('hex')}${topics[1][2].toString('hex')}`
+      logsCat += `${topics[1][3].toString('hex')}${data[1].toString('hex')}`;
+      const proveReceipt = await relayA.proveReceipt(logsCat, depositReceipt.cumulativeGasUsed,
+        depositReceipt.logsBloom, depositBlock.receiptsRoot, path, parentNodes,
+        { from: accounts[1], gas: 500000 })
+
+      console.log('proveReceipt gas usage:', proveReceipt.receipt.gasUsed);
     });
 
     it('Should submit the required data and make the withdrwal', () => {

@@ -15,7 +15,7 @@ const async = require('async');
 const sha3 = require('js-sha3').keccak256;
 
 exports.build = build;
-exports.verifyTx = verifyTx;
+exports.verify = verify;
 
 function build(tx, block) {
   return new Promise((resolve, reject) => {
@@ -47,20 +47,20 @@ function build(tx, block) {
 // From eth-proof (VerifyProof.trieValue)
 // Checks that the path of the tx (value) is correct
 // `value` is rlp decoded
-function verifyTx(proof) {
+// `i` is the index of the root in the header: 4 = tx, 5 = receipt
+function verify(proof, j) {
   const path  = proof.path.toString('hex');
   const value = proof.value;
   const parentNodes = proof.parentNodes;
   const header = proof.header;
   const blockHash = proof.blockHash;
-  const txRoot = header[4]; // txRoot is the 4th item in the header Array
+  const txRoot = header[j]; // txRoot is the 4th item in the header Array
   try{
     var currentNode;
     var len = parentNodes.length;
     var rlpTxFromPrf = parentNodes[len - 1][parentNodes[len - 1].length - 1];
     var nodeKey = txRoot;
     var pathPtr = 0;
-
     for (var i = 0 ; i < len ; i++) {
       currentNode = parentNodes[i];
       const encodedNode = Buffer.from(sha3(rlp.encode(currentNode)),'hex');
