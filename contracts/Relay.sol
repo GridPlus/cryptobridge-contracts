@@ -41,9 +41,9 @@ contract Relay {
     uint256 indexed end, bytes32 headerRoot, bytes32 successfulTxRoot,
     uint256 i, address proposer);
   event Deposit(address indexed user, address indexed toChain,
-    address indexed token, uint256 amount);
+    address indexed depositToken, address fromChain, uint256 amount);
   event Withdraw(address indexed user, address indexed fromChain,
-    address indexed token, uint256 amount);
+    address indexed withdrawToken, address toChain, address depositToken, uint256 amount);
   event TokenAdded(address indexed fromChain, address indexed origToken,
     address indexed newToken);
   event TokenAssociated(address indexed toChain, address indexed fromToken,
@@ -84,7 +84,8 @@ contract Relay {
   // releases it with a withdraw. It can be overwritten by the user and gets wiped
   // upon withdrawal.
   struct Withdrawal {
-    address token;          // Token to withdraw (i.e. the one mapped to deposit)
+    address withdrawToken;          // Token to withdraw (i.e. the one mapped to deposit)
+    address fromChain;
     uint256 amount;         // Number of atomic units to withdraw
     bytes32 txRoot;         // Transactions root for the block housing this tx
     bytes32 txHash;         // Hash of this tx
@@ -182,17 +183,18 @@ contract Relay {
       assert(newToken != address(0));
       EIP20 t = EIP20(newToken);
       t.transferFrom(msg.sender, address(this), t.totalSupply());
-      tokens[fromChain][newToken] = origToken;
+      tokens[fromChain][origToken] = newToken;
     }
     TokenAdded(fromChain, origToken, newToken);
   }
 
   // Forward association. Map an existing token to a replciated one on the
   // destination chain.
-  function associateToken(address toToken, address fromToken, address toChain)
+  // oldToken is on this chain; newToken is on toChain
+  function associateToken(address newToken, address origToken, address toChain)
   public onlyAdmin() {
-    tokens[toChain][fromToken] = toToken;
-    TokenAssociated(toChain, fromToken, toToken);
+    tokens[toChain][newToken] = origToken;
+    TokenAssociated(toChain, origToken, newToken);
   }
 
   // Change the number of validators required to allow a passed header root
@@ -217,10 +219,9 @@ contract Relay {
   // relay on the destination chain).
   // Only tokens for now, but ether may be allowed later.
   function deposit(address token, address toChain, uint256 amount) public payable {
-    assert(tokens[toChain][token] != address(0));
     EIP20 t = EIP20(token);
     t.transferFrom(msg.sender, address(this), amount);
-    Deposit(msg.sender, toChain, address(this), amount);
+    Deposit(msg.sender, toChain, token, address(this), amount);
   }
 
 
@@ -230,15 +231,15 @@ contract Relay {
   // of this process where the user proves the transaction root goes in the
   // block header.
   //
-  // addrs = [to, token, fromChain]
+  // addrs = [fromChain, depositToken, toChain, withdrawToken]
   //
   // netVersion is for EIP155 - v = netVersion*2 + 35 or netVersion*2 + 36
   // This can be found in a web3 console with web3.version.network. Parity
   // also serves it in the transaction log under `chainId`
   function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v,
-  bytes r, bytes s, address[3] addrs, uint256 amount, bytes32 txRoot, bytes path,
+  bytes r, bytes s, address[4] addrs, uint256 amount, bytes32 txRoot, bytes path,
   bytes parentNodes, bytes netVersion) public {
-
+    //assert(tokens[addrs[0]][addrs[3]] == addrs[1]);
     // Form the transaction data.
     bytes[] memory rawTx = new bytes[](9);
     rawTx[0] = nonce;
@@ -271,8 +272,9 @@ contract Relay {
     assert(msg.sender == ecrecover(keccak256(tx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s)));
 
     Withdrawal memory w;
-    w.token = addrs[0]; // This is incorrect. Uncommment line below
-    //w.token = tokens[fromChain][addrs[0]]
+    w.withdrawToken = addrs[3];
+    assert(addrs[2] == address(this));
+    w.fromChain = addrs[0];
     w.amount = amount;
     w.txRoot = txRoot;
     w.txHash = keccak256(tx);
@@ -302,7 +304,7 @@ contract Relay {
   //function proveReceipt(bytes cumulativeGas, bytes logsBloom, address[2] addrs,
   //bytes32[3] data, bytes32[7] topics, bytes path, bytes parentNodes)
   function proveReceipt(bytes logs, bytes cumulativeGas, bytes logsBloom,
-  bytes32 receiptsRoot, bytes path, bytes parentNodes) public {
+  bytes32 receiptsRoot, bytes path, bytes parentNodes) public constant returns(address) {
     // Make sure the user has a pending withdrawal
     //assert(pendingWithdrawals[msg.sender].txRoot != bytes32(0));
 
@@ -326,7 +328,7 @@ contract Relay {
     topics1[2] = BytesLib.slice(logs, 232, 32);
     topics1[3] = BytesLib.slice(logs, 264, 32);
     log1[1] = RLPEncode.encodeList(topics1);
-    log1[2] = BytesLib.slice(logs, 296, 32);
+    log1[2] = BytesLib.slice(logs, 296, 96); // this is three 32 byte words
     // We need to hack around the RLPEncode library for the topics, which are
     // nested lists
     bool[] memory passes = new bool[](4);
@@ -348,15 +350,33 @@ contract Relay {
     passes[1] = false;
     passes[3] = true;
 
-    // Checks on topics
-    //assert(BytesLib.toAddress(log0[0], 0) == msg.sender);
-    //assert(BytesLib.toAddress(topics1[1], 0) == msg.sender);
-    //assert(BytesLib.toAddress(topics1[3], 0) == address(this));
-    // TODO: Check that topics[2] and topics[6] correspond to relayB.address
+    // Check that the sender made this transaction
+    assert(BytesLib.toAddress(topics0[1], 12) == msg.sender);
+    assert(BytesLib.toAddress(topics1[1], 12) == msg.sender);
 
-    assert(MerklePatriciaProof.verify(RLPEncode.encodeListWithPasses(receipt, passes),
+    // Check the amount
+    assert(BytesLib.toUint(log0[2], 0) == pendingWithdrawals[msg.sender].amount);
+    assert(BytesLib.toUint(log1[2], 64) == pendingWithdrawals[msg.sender].amount);
+    // log0[0] = tokenB
+    // log1[0] = relayB
+    // topics0[2] = relayB
+    // topics1[2] = relayA
+    // topics1[3] = tokenB
+    // log1[2] = [relayB, tokenA, amount]
+
+    // Check that this is the right destination
+    assert(BytesLib.toAddress(topics1[2], 12) == address(this));
+
+    // Check the token
+    //assert(BytesLib.toAddress(log1[2], 32) == pendingWithdrawals[msg.sender].token);
+    /*assert(tokens[BytesLib.toAddress(topics1[2], 12)][tokenaddr])*/
+
+
+
+    /*assert(MerklePatriciaProof.verify(RLPEncode.encodeListWithPasses(receipt, passes),
       path, parentNodes, receiptsRoot) == true);
-    pendingWithdrawals[msg.sender].receiptsRoot = receiptsRoot;
+    pendingWithdrawals[msg.sender].receiptsRoot = receiptsRoot;*/
+    return pendingWithdrawals[msg.sender].withdrawToken;
   }
 
   // To withdraw a token, the user needs to perform three proofs:
@@ -386,6 +406,18 @@ contract Relay {
     t.transfer(msg.sender, w.amount);
     Withdraw(msg.sender, fromChain, w.token, w.amount);
     delete pendingWithdrawals[msg.sender];
+  }*/
+
+  function getPendingToken(address user) public constant returns (address) {
+    return pendingWithdrawals[user].withdrawToken;
+  }
+
+  function getPendingAmount(address user) public constant returns (uint256) {
+    return pendingWithdrawals[user].amount;
+  }
+
+  function getPendingFromChain(address user) public constant returns (address) {
+    return pendingWithdrawals[user].fromChain;
   }
 
   // ===========================================================================
@@ -393,7 +425,7 @@ contract Relay {
   // ===========================================================================
 
 
-  function txProof(bytes32 txHash, uint64 offset, uint64 index, bytes data)
+  /*function txProof(bytes32 txHash, uint64 offset, uint64 index, bytes data)
   internal constant returns (uint64) {
     bytes32[] memory proof = new bytes32[](MerkleLib.getUint64(0, data));
     proof[0] = txHash;
