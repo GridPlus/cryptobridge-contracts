@@ -304,7 +304,7 @@ contract Relay {
   //function proveReceipt(bytes cumulativeGas, bytes logsBloom, address[2] addrs,
   //bytes32[3] data, bytes32[7] topics, bytes path, bytes parentNodes)
   function proveReceipt(bytes logs, bytes cumulativeGas, bytes logsBloom,
-  bytes32 receiptsRoot, bytes path, bytes parentNodes) public constant returns(address) {
+  bytes32 receiptsRoot, bytes path, bytes parentNodes) public {
     // Make sure the user has a pending withdrawal
     //assert(pendingWithdrawals[msg.sender].txRoot != bytes32(0));
 
@@ -328,7 +328,8 @@ contract Relay {
     topics1[2] = BytesLib.slice(logs, 232, 32);
     topics1[3] = BytesLib.slice(logs, 264, 32);
     log1[1] = RLPEncode.encodeList(topics1);
-    log1[2] = BytesLib.slice(logs, 296, 96); // this is three 32 byte words
+    log1[2] = BytesLib.slice(logs, 296, 64); // this is two 32 byte words
+
     // We need to hack around the RLPEncode library for the topics, which are
     // nested lists
     bool[] memory passes = new bool[](4);
@@ -356,27 +357,23 @@ contract Relay {
 
     // Check the amount
     assert(BytesLib.toUint(log0[2], 0) == pendingWithdrawals[msg.sender].amount);
-    assert(BytesLib.toUint(log1[2], 64) == pendingWithdrawals[msg.sender].amount);
-    // log0[0] = tokenB
-    // log1[0] = relayB
-    // topics0[2] = relayB
-    // topics1[2] = relayA
-    // topics1[3] = tokenB
-    // log1[2] = [relayB, tokenA, amount]
+    assert(BytesLib.toUint(log1[2], 32) == pendingWithdrawals[msg.sender].amount);
 
     // Check that this is the right destination
     assert(BytesLib.toAddress(topics1[2], 12) == address(this));
 
+    // Check that it's coming from the right place
+    assert(BytesLib.toAddress(log1[0], 0) == pendingWithdrawals[msg.sender].fromChain);
+
     // Check the token
-    //assert(BytesLib.toAddress(log1[2], 32) == pendingWithdrawals[msg.sender].token);
-    /*assert(tokens[BytesLib.toAddress(topics1[2], 12)][tokenaddr])*/
+    assert(tokens[pendingWithdrawals[msg.sender].fromChain][BytesLib.toAddress(log0[0], 0)] == pendingWithdrawals[msg.sender].withdrawToken);
 
+    // TODO: There may be more checks for other parts of the logs, but this covers
+    // the basic stuff
 
-
-    /*assert(MerklePatriciaProof.verify(RLPEncode.encodeListWithPasses(receipt, passes),
+    assert(MerklePatriciaProof.verify(RLPEncode.encodeListWithPasses(receipt, passes),
       path, parentNodes, receiptsRoot) == true);
-    pendingWithdrawals[msg.sender].receiptsRoot = receiptsRoot;*/
-    return pendingWithdrawals[msg.sender].withdrawToken;
+    pendingWithdrawals[msg.sender].receiptsRoot = receiptsRoot;
   }
 
   // To withdraw a token, the user needs to perform three proofs:

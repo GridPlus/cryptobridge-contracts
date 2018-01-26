@@ -339,9 +339,9 @@ contract('Relay', (accounts) => {
       // Make the transaction
       const prepWithdraw = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
         [relayB.options.address, tokenB.options.address, relayA.address, tokenA.address], 5,
-        depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 600000 });
+        depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 500000 });
       console.log('prepWithdraw gas usage:', prepWithdraw.receipt.gasUsed);
-      assert(prepWithdraw.receipt.gasUsed < 600000);
+      assert(prepWithdraw.receipt.gasUsed < 500000);
     })
 
     it('Should check the pending withdrawal fields', async () => {
@@ -354,8 +354,6 @@ contract('Relay', (accounts) => {
     it('Should prove the state root', async () => {
       // Get the receipt proof
       const receiptProof = await rProof.buildProof(depositReceipt, depositBlockSlim, web3B);
-      console.log('deposit', deposit)
-      console.log('receiptProof', receiptProof)
       const path = ensureByte(rlp.encode(receiptProof.path).toString('hex'));
       const parentNodes = ensureByte(rlp.encode(receiptProof.parentNodes).toString('hex'));
 
@@ -366,8 +364,6 @@ contract('Relay', (accounts) => {
       const encodedReceiptValue = rlp.encode(receiptProof.value);
 
       assert(encodedReceiptTest.equals(encodedReceiptValue) == true);
-
-      console.log('encodedLogs', encodedLogs)
       let addrs = [encodedLogs[0][0], encodedLogs[1][0]];
       let topics = [encodedLogs[0][1], encodedLogs[1][1]];
       let data = [encodedLogs[0][2], encodedLogs[1][2]];
@@ -377,21 +373,11 @@ contract('Relay', (accounts) => {
       logsCat += `${data[0].toString('hex')}${addrs[1].toString('hex')}${topics[1][0].toString('hex')}`
       logsCat += `${topics[1][1].toString('hex')}${topics[1][2].toString('hex')}`
       logsCat += `${topics[1][3].toString('hex')}${data[1].toString('hex')}`;
-      console.log('topics1data', data[1].toString('hex'))
-      console.log('encodedLogs', encodedLogs)
-      console.log('relayA', relayA.address);
-      console.log('relayB', relayB.options.address);
-      console.log('tokenA', tokenA.address);
-      console.log('tokenB', tokenB.options.address);
-      console.log('accounts[1]', accounts[1])
       const proveReceipt = await relayA.proveReceipt(logsCat, depositReceipt.cumulativeGasUsed,
         depositReceipt.logsBloom, depositBlock.receiptsRoot, path, parentNodes,
-        { from: accounts[1], gas: 1000000 })
-      console.log('proveReceipt', proveReceipt);
+        { from: accounts[1], gas: 500000 })
 
-      // console.log('proveReceipt gas usage', proveReceipt.receipt.gasUsed);
-      // assert(proveReceipt.receipt.gasUsed < 1000000);
-
+      console.log('proveReceipt gas usage:', proveReceipt.receipt.gasUsed);
     });
 
     it('Should submit the required data and make the withdrwal', () => {
