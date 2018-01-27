@@ -38,8 +38,7 @@ contract Relay {
   // This maps the start block and end block for a given chain to an epoch
   // index (i) and provides the root.
   event RootStorage(address indexed chain, uint256 indexed start,
-    uint256 indexed end, bytes32 headerRoot, bytes32 successfulTxRoot,
-    uint256 i, address proposer);
+    uint256 indexed end, bytes32 headerRoot, uint256 i, address proposer);
   event Deposit(address indexed user, address indexed toChain,
     address indexed depositToken, address fromChain, uint256 amount);
   event Withdraw(address indexed user, address indexed fromChain,
@@ -74,11 +73,11 @@ contract Relay {
     uint256 amount;
     address staker;
   }
-  mapping(address => uint64) stakers;
+  mapping(address => uint256) stakers;
   Stake[] stakes;
   uint256 public stakeSum;
   address stakeToken;
-  uint64 public validatorThreshold = 0;
+  uint256 public validatorThreshold = 0;
 
   // Pending withdrawals. The user prepares a withdrawal with tx data and then
   // releases it with a withdraw. It can be overwritten by the user and gets wiped
@@ -98,10 +97,6 @@ contract Relay {
   // sidechain. This also serves as the identity of the chain itself.
   // The associatin between address-id and chain-id is stored off-chain but it
   // must be 1:1 and unique.
-  // successfulTxRoots are used to mark certain transactions as successful.
-  // There is no way to reference success/failure from the transaction data itself,
-  // so we need to store those too. They are stored in a normal Merkle tree.
-  // The `root` itself is keccak256(headerRoot, successfulTxRoot)
   mapping(address => bytes32[]) roots;
 
   // Tokens need to be associated between chains. For now, only the admin can
@@ -118,14 +113,14 @@ contract Relay {
     EIP20 t = EIP20(stakeToken);
     t.transferFrom(msg.sender, address(this), amount);
     // We can't have a 0-length stakes array
-    if (stakes.length == 0) { stakes.push(s); }
     if (stakers[msg.sender] == 0) {
       // If the staker is new
       Stake memory s;
       s.amount = amount;
       s.staker = msg.sender;
+      if (stakes.length == 0) { stakes.push(s); }
       stakes.push(s);
-      stakers[msg.sender] = uint64(stakes.length) - 1;
+      stakers[msg.sender] = stakes.length - 1;
     } else {
       // Otherwise we can just add to the stake
       stakes[stakers[msg.sender]].amount += amount;
@@ -134,26 +129,28 @@ contract Relay {
   }
 
   // Remove stake
+  // TODO: This can probably be rolled into stake()
   function destake(uint256 amount) public {
     assert(stakers[msg.sender] != 0);
     assert(amount <= stakes[stakers[msg.sender]].amount);
-    stakes[stakers[msg.sender]].amount -= amount;
+    stakeSum -= amount;
+    /*stakes[stakers[msg.sender]].amount -= amount;
     stakeSum -= amount;
     EIP20 t = EIP20(stakeToken);
     t.transfer(msg.sender, amount);
     if (stakes[stakers[msg.sender]].amount == 0) {
       delete stakes[stakers[msg.sender]];
-    }
+    }*/
   }
 
-  // Save a hash to an append-only array of headerRoots associated with the
+  // Save a hash to an append-only array of rootHashes associated with the
   // given origin chain address-id.
-  function proposeRoots(bytes32 headerRoot, bytes32 successfulTxRoot,
-  address chainId, uint256 start, uint256 end, bytes sigs) public {
+  function proposeRoots(bytes32 headerRoot, address chainId, uint256 start,
+  uint256 end, bytes sigs) public {
     // Make sure enough validators sign off on the proposed header root
-    assert(checkSignatures(headerRoot, chainId, start, end, sigs) == true);
+    //assert(checkSignatures(headerRoot, chainId, start, end, sigs) == true);
     // Add the header root
-    roots[chainId].push(keccak256(headerRoot, successfulTxRoot));
+    roots[chainId].push(headerRoot);
     // Calculate the reward and issue it
     uint256 r = reward.base + reward.a * (end - start);
     // If we exceed the max reward, anyone can propose the header root
@@ -164,8 +161,7 @@ contract Relay {
     }
     msg.sender.transfer(r);
     epochSeed = block.blockhash(block.number);
-    RootStorage(chainId, start, end, headerRoot, successfulTxRoot,
-      roots[chainId].length, msg.sender);
+    RootStorage(chainId, start, end, headerRoot, roots[chainId].length, msg.sender);
   }
 
   // ===========================================================================
@@ -198,7 +194,7 @@ contract Relay {
   }
 
   // Change the number of validators required to allow a passed header root
-  function updateValidatorThreshold(uint64 newThreshold) public onlyAdmin() {
+  function updateValidatorThreshold(uint256 newThreshold) public onlyAdmin() {
     validatorThreshold = newThreshold;
   }
 
@@ -482,32 +478,40 @@ contract Relay {
   function checkSignatures(bytes32 root, address chain, uint256 start, uint256 end,
   bytes sigs) public constant returns (bool) {
     bytes32 h = keccak256(root, chain, start, end);
-    address valTmp;
-    address[] passing;
-    bytes32 r;
-    bytes32 s;
-    uint8 v;
+    uint256 passed;
+    address[] memory passing = new address[](sigs.length / 96);
     // signs are chunked in 65 bytes -> [r, s, v]
-    for (uint64 i = 32; i < sigs.length; i += 96) {
-      assembly {
-        r := mload(add(sigs, i))
-        s := mload(add(sigs, add(i, 32)))
-        v := mload(add(sigs, add(i, 64)))
-      }
-      valTmp = ecrecover(h, v, r, s);
+    for (uint64 i = 0; i < sigs.length; i += 96) {
+      bytes32 r = BytesLib.toBytes32(BytesLib.slice(sigs, i, 32));
+      bytes32 s = BytesLib.toBytes32(BytesLib.slice(sigs, i + 32, 32));
+      uint8 v = uint8(BytesLib.toUint(sigs, i + 64));
+      address valTmp = ecrecover(h, v, r, s);
       // Make sure this address is a staker and NOT the proposer
-      assert(stakers[valTmp] != 0);
+      //assert(stakers[valTmp] > 0);
       assert(valTmp != getProposer());
+
+      bool noPass = false;
       // Unfortunately we need to loop through the cache to make sure there are
       // no signature duplicates. This is the most efficient way to do it since
       // storage costs too much.s
-      for (uint64 j = 0; j < (i - 32) / 96; j += 1) {
-        assert(passing[j] != valTmp);
+      for (uint64 j = 0; j < i / 96; j += 1) {
+        if(passing[j] == valTmp) { noPass = true; }
       }
-      passing.push(valTmp);
-
+      if (noPass == false && valTmp != getProposer() && stakers[valTmp] > 0) {
+        passing[(i / 96)] = valTmp;
+        passed ++;
+      }
     }
-    return passing.length >= validatorThreshold;
+
+    return passed >= validatorThreshold;
+  }
+
+  function getStake(address a) public constant returns (uint256) {
+    return stakes[stakers[a]].amount;
+  }
+
+  function getStakeIndex(address a) public constant returns (uint256) {
+    return stakers[a];
   }
 
   // Sample a proposer. Likelihood of being chosen is proportional to stake size.
