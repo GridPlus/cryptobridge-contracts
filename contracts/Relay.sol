@@ -145,7 +145,7 @@ contract Relay {
 
   // Save a hash to an append-only array of rootHashes associated with the
   // given origin chain address-id.
-  function proposeRoots(bytes32 headerRoot, address chainId, uint256 start,
+  function proposeRoot(bytes32 headerRoot, address chainId, uint256 start,
   uint256 end, bytes sigs) public {
     // Make sure enough validators sign off on the proposed header root
     //assert(checkSignatures(headerRoot, chainId, start, end, sigs) == true);

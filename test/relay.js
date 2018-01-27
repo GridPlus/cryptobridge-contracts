@@ -299,11 +299,8 @@ contract('Relay', (accounts) => {
       }
       sigData = val.formatSigs(sigs);
       const passing = await relayA.checkSignatures(headerRoot, relayB.options.address, start, end, sigData);
-      console.log('passing', passing)
-      // console.log('passing', parseInt(passing))
-      // assert(passing === true);
     });
-/*
+
     it('Should submit header and sigs to chain A', async () => {
       let i;
       accounts.forEach((account, _i) => {
@@ -312,18 +309,25 @@ contract('Relay', (accounts) => {
       const bountyStart = await web3A.eth.getBalance(relayA.address);
       const proposerStart = await web3A.eth.getBalance(accounts[i]);
 
-      const receipt = await relayA.proposeRoot(headerRoot, relayB.options.address, start, end, sigData,
-        { from: accounts[i], gasPrice: gasPrice });
+      const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, start, end, sigData,
+        { from: accounts[i], gas: 500000, gasPrice: gasPrice });
+      console.log('proposeRoot', proposeRoot)
       const bountyEnd = await web3A.eth.getBalance(relayA.address);
       const proposerEnd = await web3A.eth.getBalance(proposer);
-      const gasCost = receipt.receipt.gasUsed * gasPrice;
+      const gasCost = proposeRoot.receipt.gasUsed * gasPrice;
 
       // Make sure the proposer got the payout. There will be rounding errors from
       // JS so just check that it's within 10,000 wei
       const diffBounty = Math.round((bountyStart - bountyEnd) / 10000);
       const diffProposer = Math.round((proposerEnd - proposerStart + gasCost) / 10000);
+
+      console.log('bountyStart', bountyStart)
+      console.log('bountyEnd', bountyEnd)
+      console.log('proposerStart', proposerStart)
+      console.log('proposerEnd', proposerEnd);
+      console.log('gasCost', gasCost);
       assert(diffBounty === diffProposer);
-    });*/
+    });
   })
 
 /*  describe('User: Withdraw tokens on chain A', () => {

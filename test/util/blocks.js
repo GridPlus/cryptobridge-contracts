@@ -141,7 +141,7 @@ function prove(proof, i, headerRoot, start, end) {
 
 function _hashHeader(block, prevHeader, genesis=false) {
   if (genesis) { return sha3(0, 1, block.timestamp, block.transactionsRoot); }
-  else { return sha3(prevHeader, block.number, block.timestamp, block.transactionsRoot); }
+  else { return sha3(prevHeader, block.number, block.timestamp, block.transactionsRoot, block.receiptsRoot); }
 }
 
 function _isPowTwo(n) {
