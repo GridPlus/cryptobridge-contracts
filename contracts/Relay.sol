@@ -413,6 +413,13 @@ contract Relay {
     return pendingWithdrawals[user].fromChain;
   }
 
+  function getReward(uint start, uint end) public constant returns (uint256) {
+    uint256 r = reward.base + reward.a * (end - start);
+    // If we exceed the max reward, anyone can propose the header root
+    if (r > maxReward) { r = maxReward; }
+    return r;
+  }
+
   // ===========================================================================
   // UTILITY FUNCTIONS
   // ===========================================================================

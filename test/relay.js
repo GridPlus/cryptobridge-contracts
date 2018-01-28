@@ -16,6 +16,7 @@ const Token = artifacts.require('EIP20.sol'); // EPM package
 const Relay = artifacts.require('./Relay');
 const EthereumTx = require('ethereumjs-tx');
 const EthUtil = require('ethereumjs-util');
+const BN = require('big-number');
 
 // Need two of these
 const _providerA = `http://${truffleConf.development.host}:${truffleConf.development.port}`;
@@ -309,24 +310,16 @@ contract('Relay', (accounts) => {
       const bountyStart = await web3A.eth.getBalance(relayA.address);
       const proposerStart = await web3A.eth.getBalance(accounts[i]);
 
+      const reward = await relayA.getReward(start, end);
+
       const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, start, end, sigData,
         { from: accounts[i], gas: 500000, gasPrice: gasPrice });
-      console.log('proposeRoot', proposeRoot)
       const bountyEnd = await web3A.eth.getBalance(relayA.address);
       const proposerEnd = await web3A.eth.getBalance(proposer);
       const gasCost = proposeRoot.receipt.gasUsed * gasPrice;
-
-      // Make sure the proposer got the payout. There will be rounding errors from
-      // JS so just check that it's within 10,000 wei
-      const diffBounty = Math.round((bountyStart - bountyEnd) / 10000);
-      const diffProposer = Math.round((proposerEnd - proposerStart + gasCost) / 10000);
-
-      console.log('bountyStart', bountyStart)
-      console.log('bountyEnd', bountyEnd)
-      console.log('proposerStart', proposerStart)
-      console.log('proposerEnd', proposerEnd);
-      console.log('gasCost', gasCost);
-      assert(diffBounty === diffProposer);
+      const diffBounty = bountyStart - bountyEnd;
+      assert(diffBounty === parseInt(reward));
+      assert(parseInt(BN(proposerEnd).plus(gasCost).minus(proposerStart)) === parseInt(reward));
     });
   })
 

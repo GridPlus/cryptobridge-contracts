@@ -26,6 +26,7 @@
   "homepage": "https://github.com/alex-miller-0/trustless-relay#readme",
   "dependencies": {
     "async": "^2.6.0",
+    "big-number": "^0.4.0",
     "bip39": "^2.5.0",
     "bluebird": "^3.5.1",
     "eth-proof": "^0.1.3",
