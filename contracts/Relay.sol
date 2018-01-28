@@ -6,7 +6,6 @@ import "./BytesLib.sol";
 import "tokens/contracts/eip20/EIP20.sol";
 
 contract Relay {
-
   //helpers
   function toBytes(address a) constant returns (bytes b) {
       assembly {
@@ -18,11 +17,6 @@ contract Relay {
   }
 
   function toBytes(uint256 x) returns (bytes b) {
-    b = new bytes(32);
-    assembly { mstore(add(b, 32), x) }
-  }
-
-  function bytes32ToBytes(bytes32 x) returns (bytes b) {
     b = new bytes(32);
     assembly { mstore(add(b, 32), x) }
   }
@@ -99,6 +93,9 @@ contract Relay {
   // must be 1:1 and unique.
   mapping(address => bytes32[]) roots;
 
+  // Tracking the last block for each relay network
+  mapping(address => uint256) lastBlock;
+
   // Tokens need to be associated between chains. For now, only the admin can
   // create and map tokens on the sidechain to tokens on the main chain
   // fromChainId => (oldTokenAddr => newTokenAddr)
@@ -145,14 +142,16 @@ contract Relay {
 
   // Save a hash to an append-only array of rootHashes associated with the
   // given origin chain address-id.
-  function proposeRoot(bytes32 headerRoot, address chainId, uint256 start,
-  uint256 end, bytes sigs) public {
+  function proposeRoot(bytes32 headerRoot, address chainId, uint256 end, bytes sigs)
+  public {
+    // Make sure we are adding blocks
+    assert(end > lastBlock[chainId]);
     // Make sure enough validators sign off on the proposed header root
-    //assert(checkSignatures(headerRoot, chainId, start, end, sigs) == true);
+    assert(checkSignatures(headerRoot, chainId, lastBlock[chainId], end, sigs) == true);
     // Add the header root
     roots[chainId].push(headerRoot);
     // Calculate the reward and issue it
-    uint256 r = reward.base + reward.a * (end - start);
+    uint256 r = reward.base + reward.a * (end - lastBlock[chainId]);
     // If we exceed the max reward, anyone can propose the header root
     if (r > maxReward) {
       r = maxReward;
@@ -161,7 +160,7 @@ contract Relay {
     }
     msg.sender.transfer(r);
     epochSeed = block.blockhash(block.number);
-    RootStorage(chainId, start, end, headerRoot, roots[chainId].length, msg.sender);
+    RootStorage(chainId, lastBlock[chainId], end, headerRoot, roots[chainId].length, msg.sender);
   }
 
   // ===========================================================================
@@ -413,8 +412,8 @@ contract Relay {
     return pendingWithdrawals[user].fromChain;
   }
 
-  function getReward(uint start, uint end) public constant returns (uint256) {
-    uint256 r = reward.base + reward.a * (end - start);
+  function getReward(uint end, address chainId) public constant returns (uint256) {
+    uint256 r = reward.base + reward.a * (end - lastBlock[chainId]);
     // If we exceed the max reward, anyone can propose the header root
     if (r > maxReward) { r = maxReward; }
     return r;

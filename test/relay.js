@@ -310,16 +310,23 @@ contract('Relay', (accounts) => {
       const bountyStart = await web3A.eth.getBalance(relayA.address);
       const proposerStart = await web3A.eth.getBalance(accounts[i]);
 
-      const reward = await relayA.getReward(start, end);
+      const reward = await relayA.getReward(end, relayB.options.address);
 
-      const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, start, end, sigData,
-        { from: accounts[i], gas: 500000, gasPrice: gasPrice });
-      const bountyEnd = await web3A.eth.getBalance(relayA.address);
-      const proposerEnd = await web3A.eth.getBalance(proposer);
-      const gasCost = proposeRoot.receipt.gasUsed * gasPrice;
-      const diffBounty = bountyStart - bountyEnd;
-      assert(diffBounty === parseInt(reward));
-      assert(parseInt(BN(proposerEnd).plus(gasCost).minus(proposerStart)) === parseInt(reward));
+
+      // TODO: Add fast-forward function to get to a specified block
+      // TODO: Fast-forward to the next 2^N block
+
+
+      // const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, end, sigData,
+      //   { from: accounts[i], gas: 500000, gasPrice: gasPrice });
+      // console.log('Propose root gas usage: ', proposeRoot.receipt.gasUsed);
+      // const bountyEnd = await web3A.eth.getBalance(relayA.address);
+      // const proposerEnd = await web3A.eth.getBalance(proposer);
+      // const gasCost = proposeRoot.receipt.gasUsed * gasPrice;
+      //
+      // const diffBounty = bountyStart - bountyEnd;
+      // assert(diffBounty === parseInt(reward));
+      // assert(parseInt(BN(proposerEnd).plus(gasCost).minus(proposerStart)) === parseInt(reward));
     });
   })
 
@@ -402,7 +409,6 @@ contract('Relay', (accounts) => {
       const proveReceipt = await relayA.proveReceipt(logsCat, depositReceipt.cumulativeGasUsed,
         depositReceipt.logsBloom, depositBlock.receiptsRoot, path, parentNodes,
         { from: accounts[1], gas: 500000 })
-
       console.log('proveReceipt gas usage:', proveReceipt.receipt.gasUsed);
     });
 
@@ -410,5 +416,5 @@ contract('Relay', (accounts) => {
 
     });
   });
-  */
+*/
 });
