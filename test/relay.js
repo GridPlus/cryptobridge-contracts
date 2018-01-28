@@ -1,3 +1,4 @@
+const Promise = require('bluebird').Promise;
 const bip39 = require('bip39');
 const hdkey = require('ethereumjs-wallet/hdkey');
 const leftPad = require('left-pad');
@@ -257,6 +258,57 @@ contract('Relay', (accounts) => {
     });
   });
 
+  describe('Stakers: Relay backlog', () => {
+    let ends = [];
+    let sigData = [];
+    const headerRoot = sha3('fake'); // We can fake this one since there are no deposits
+
+    it('Should get a set of end points to relay (powers of two)', async () => {
+      // Get to the latest block with a set of end points
+      const latestBlock = await web3B.eth.getBlockNumber();
+      const lastBlock = await relayA.getLastBlock(relayB.options.address);
+
+      // Get the set of end points that we will want to checkpoint. There should
+      // only be a handful since they get exponentially smaller
+      ends.push(blocks.getLastPowTwo(parseInt(latestBlock)));
+      let endsSum = ends[0];
+      while (blocks.getLastPowTwo(latestBlock - endsSum) > 1) {
+        const nextEnd = blocks.getLastPowTwo(latestBlock - endsSum);
+        ends.push(nextEnd);
+        endsSum += nextEnd;
+      }
+    });
+
+    it('Should go through end points and get signatures', async () => {
+      Promise.map(ends, async (end) => {
+        console.log('end', end);
+        // Sign and store
+        let signers = [];
+        const start = await relayA.getLastBlock(relayB.options.address);
+        const msg = val.getMsg(headerRoot, relayB.options.address, parseInt(start), end);
+        let sigs = [];
+        // wallets[i+1] = accounts[i] and we're looking for accounts 1-4
+        for (let i = 0; i < 4; i++) {
+          if (wallets[i+1][0] != proposer) {
+            sigs.push(val.sign(msg, wallets[i+1]));
+            signers.push(wallets[i+1][0]);
+          }
+        }
+        sigData = val.formatSigs(sigs);
+        const passing = await relayA.checkSignatures(headerRoot, relayB.options.address, parseInt(start), end, sigData);
+        assert(passing === true);
+      })
+    });
+
+    /*it('Should submit header and sigs to chain A', async () => {
+      const proposer = await relayA.getProposer()
+      const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, end, sigData,
+        { from: proposer, gas: 500000, gasPrice: gasPrice });
+      console.log('Propose root gas usage: ', proposeRoot.receipt.gasUsed);
+    });*/
+
+  })
+
   describe('User: Deposit tokens on chain B', () => {
     it('Should deposit 5 token B to the relay on chain B', async () => {
       await tokenB.methods.approve(relayB.options.address, 5).send({ from: accounts[1] })
@@ -269,15 +321,27 @@ contract('Relay', (accounts) => {
       depositBlockSlim = await web3B.eth.getBlock(_deposit.blockHash, false);
       depositReceipt = await web3B.eth.getTransactionReceipt(_deposit.transactionHash);
     });
-
   })
 
   describe('Stakers: Relay blocks', () => {
-    let start;
     let end;
     let sigData;
 
-    it('Should form a Merkle tree from the last four block headers, get signatures, and submit to chain A', async () => {
+    /*it('Should fast forward blockchain to next power of two', async() => {
+      const lastBlock = await relayA.getLastBlock(relayB.options.address);
+      console.log('lastBlock?', lastBlock)
+      const currentBlock = await web3B.eth.getBlockNumber();
+      end = blocks.getNextPowTwo(currentBlock - lastBlock);
+      console.log('end', end)
+      console.log('currentblock', currentBlock)
+      console.log('lastBlock', parseInt(lastBlock))
+      await blocks.forceMine(end - currentBlock, accounts[0], web3B)
+
+      const nowBlock = await web3B.eth.getBlockNumber();
+      assert(parseInt(nowBlock) === end)
+    });*/
+
+    /*it('Should form a Merkle tree from the last four block headers, get signatures, and submit to chain A', async () => {
       start = depositBlock.number - 3;
       end = depositBlock.number;
       headers = await blocks.getHeaders(start, end, web3B);
@@ -315,7 +379,11 @@ contract('Relay', (accounts) => {
 
       // TODO: Add fast-forward function to get to a specified block
       // TODO: Fast-forward to the next 2^N block
-
+      const blockN = await web3A.eth.getBlockNumber();
+      console.log('blockN', blockN);
+      await blocks.forceMine(3, accounts[0], web3A)
+      const blockN2 = await web3A.eth.getBlockNumber();
+      console.log('blockN2', blockN2);
 
       // const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, end, sigData,
       //   { from: accounts[i], gas: 500000, gasPrice: gasPrice });
@@ -327,10 +395,10 @@ contract('Relay', (accounts) => {
       // const diffBounty = bountyStart - bountyEnd;
       // assert(diffBounty === parseInt(reward));
       // assert(parseInt(BN(proposerEnd).plus(gasCost).minus(proposerStart)) === parseInt(reward));
-    });
+    });*/
   })
 
-/*  describe('User: Withdraw tokens on chain A', () => {
+  /*describe('User: Withdraw tokens on chain A', () => {
 
     it('Should check that the deposit txParams hash was signed by accounts[1]', async () => {
       const unsignedDeposit = deposit;

@@ -161,6 +161,7 @@ contract Relay {
     msg.sender.transfer(r);
     epochSeed = block.blockhash(block.number);
     RootStorage(chainId, lastBlock[chainId], end, headerRoot, roots[chainId].length, msg.sender);
+    lastBlock[chainId] = end;
   }
 
   // ===========================================================================
@@ -518,6 +519,10 @@ contract Relay {
 
   function getStakeIndex(address a) public constant returns (uint256) {
     return stakers[a];
+  }
+
+  function getLastBlock(address fromChain) public constant returns (uint256) {
+    return lastBlock[fromChain];
   }
 
   // Sample a proposer. Likelihood of being chosen is proportional to stake size.
