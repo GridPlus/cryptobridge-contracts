@@ -18,6 +18,7 @@ const Relay = artifacts.require('./Relay');
 const EthereumTx = require('ethereumjs-tx');
 const EthUtil = require('ethereumjs-util');
 const BN = require('big-number');
+const MerkleTools = require('merkle-tools');
 
 // Need two of these
 const _providerA = `http://${truffleConf.development.host}:${truffleConf.development.port}`;
@@ -47,6 +48,7 @@ let merkleLibBAddr;
 let deposit;
 let depositBlock;
 let depositBlockSlim; // Contains only tx hashes
+let depositHeader;
 let depositReceipt;
 let headers;
 let headerRoot;
@@ -313,11 +315,9 @@ contract('Relay', (accounts) => {
       // only be a handful since they get exponentially smaller
       _ends.push(blocks.getLastPowTwo(parseInt(latestBlock)));
       let endsSum = _ends[0];
-      console.log('ends', _ends)
       while (blocks.getLastPowTwo(latestBlock - endsSum) > 1) {
         const nextEnd = blocks.getLastPowTwo(latestBlock - endsSum);
         _ends.push(nextEnd);
-        console.log('_ends', _ends)
         endsSum += nextEnd;
       }
       let endsSum2 = 0;
@@ -343,6 +343,7 @@ contract('Relay', (accounts) => {
       const balance = await tokenB.methods.balanceOf(accounts[1]).call();
       deposit = await web3B.eth.getTransaction(_deposit.transactionHash);
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
+      console.log('depositBlock', depositBlock);
       depositBlockSlim = await web3B.eth.getBlock(_deposit.blockHash, false);
       depositReceipt = await web3B.eth.getTransactionReceipt(_deposit.transactionHash);
     });
@@ -360,19 +361,24 @@ contract('Relay', (accounts) => {
       let diff = currentBlock - lastBlock;
       let toMine = blocks.getNextPowTwo(diff) - diff;
       if (blocks.isPowTwo(diff)) { toMine = 0; }
-      console.log('currentBlock', currentBlock, 'lastBlock', lastBlock, 'diff', diff);
-      console.log('force mining ', diff);
       await blocks.forceMine(toMine, accounts[0], web3B)
-
       end = await web3B.eth.getBlockNumber();
-      console.log('end', end);
-
       assert(blocks.isPowTwo(end - lastBlock) === true);
     });
 
     it('Should form a Merkle tree from the last block headers, get signatures, and submit to chain A', async () => {
+      console.log('getting headers from ', lastBlock + 1, end)
       headers = await blocks.getHeaders(lastBlock + 1, end, web3B);
-      headerRoot = blocks.getRoot(headers);
+      depositHeader = headers[depositBlock.blockNumber - lastBlock + 1];
+      console.log('depositHeader', depositHeader);
+      let moddedHeaders = [];
+      headers.forEach((header) => { moddedHeaders.push(header.slice(2)); })
+      tree = new MerkleTools();
+      console.log('headers', moddedHeaders);
+      tree.addLeaves(moddedHeaders);
+      tree.makeTree()
+      headerRoot = '0x' + tree.getMerkleRoot().toString('hex');
+      console.log('got header root', headerRoot)
       assert(headerRoot != null);
     });
 
@@ -409,9 +415,9 @@ contract('Relay', (accounts) => {
     });
   })
 
-  /*describe('User: Withdraw tokens on chain A', () => {
+  describe('User: Withdraw tokens on chain A', () => {
 
-    it('Should check that the deposit txParams hash was signed by accounts[1]', async () => {
+    it('Should check that the deposit txParams hash was signed by wallets[2]', async () => {
       const unsignedDeposit = deposit;
       unsignedDeposit.value = '';
       unsignedDeposit.gasPrice = parseInt(deposit.gasPrice);
@@ -421,11 +427,11 @@ contract('Relay', (accounts) => {
 
       const signerPub = EthUtil.ecrecover(ethtxhash, signingV, deposit.r, deposit.s)
       const signer = EthUtil.pubToAddress(signerPub).toString('hex');
-      assert(`0x${signer}` === accounts[1]);
+      assert(`0x${signer}` === wallets[2][0]);
     });
 
 
-   it('Should prepare the withdrawal with the transaction data (accounts[1])', async () => {
+   it('Should prepare the withdrawal with the transaction data (wallets[2])', async () => {
       const proof = await txProof.build(deposit, depositBlock);
       const path = ensureByte(rlp.encode(proof.path).toString('hex'));
       const parentNodes = ensureByte(rlp.encode(proof.parentNodes).toString('hex'));
@@ -451,7 +457,7 @@ contract('Relay', (accounts) => {
       // Make the transaction
       const prepWithdraw = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
         [relayB.options.address, tokenB.options.address, relayA.address, tokenA.address], 5,
-        depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 500000 });
+        depositBlock.transactionsRoot, path, parentNodes, version, { from: wallets[2][0], gas: 500000 });
       console.log('prepWithdraw gas usage:', prepWithdraw.receipt.gasUsed);
       assert(prepWithdraw.receipt.gasUsed < 500000);
     })
@@ -487,13 +493,21 @@ contract('Relay', (accounts) => {
       logsCat += `${topics[1][3].toString('hex')}${data[1].toString('hex')}`;
       const proveReceipt = await relayA.proveReceipt(logsCat, depositReceipt.cumulativeGasUsed,
         depositReceipt.logsBloom, depositBlock.receiptsRoot, path, parentNodes,
-        { from: accounts[1], gas: 500000 })
+        { from: wallets[2][0], gas: 500000 })
       console.log('proveReceipt gas usage:', proveReceipt.receipt.gasUsed);
     });
 
-    it('Should submit the required data and make the withdrwal', () => {
-
+    it('Should submit the required data and make the withdrawal', async () => {
+      // Get the proof
+      let hI;
+      headers.forEach((header, i) => {
+        console.log('header', header, 'depositBlock.hash', depositBlock.hash)
+        if (header == depositHeader) { hI = i; }
+      })
+      console.log('hi', hI)
+      const proof = tree.getProof(hI, true);
+      console.log('proof', proof)
     });
   });
-*/
+
 });

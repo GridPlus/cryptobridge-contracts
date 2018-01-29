@@ -38,6 +38,8 @@
     "jsonfile": "^4.0.0",
     "left-pad": "^1.2.0",
     "merkle-patricia-tree": "^2.3.0",
+    "merkle-tools": "^1.4.0",
+    "mtree": "^1.0.0",
     "rlp": "^2.0.0",
     "solidity-sha3": "^0.4.1",
     "spectcl": "^0.6.3",

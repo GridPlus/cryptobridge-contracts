@@ -12,6 +12,10 @@ const sha3 = require('solidity-sha3').default;
 
 
 // Get a range of headers. More efficient than pulling them individually.
+// NOTE: This is kinda cheating, since it references the genesis block as the
+// "previousHeader" for all ranges. That's fine for thse test cases, but will
+// not fly for production systems. PreviousHeaders should be saved in persistant
+// storage
 function getHeaders(start, end, web3, headers=[], i=null, parentRes=null) {
   return new Promise((resolve, reject) => {
     let lastBlock = 1;

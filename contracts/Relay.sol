@@ -372,29 +372,10 @@ contract Relay {
     pendingWithdrawals[msg.sender].receiptsRoot = receiptsRoot;
   }
 
-  // To withdraw a token, the user needs to perform three proofs:
-  // 1. Prove that the transaction was included in a transaction Merkle tree
-  // 2. Prove that the tx Merkle root went in to forming a block header
-  // 3. Prove that the block header went into forming the header root of an epoch
-  // Data is of form: [txTreeDepth, txProof, block header data, headerTreeDepth,
-  // headerProof]
-  //
-  // Note: Because the history is based on social consensus, the block headers
-  // can actually be different than what exists in the canonical blockchain.
-  // We can vastly simplify the block data!
-  //
-  // indices = locations within the Merkle tree [ tx, header ]
-  // loc = location of the header root
-  /*function withdraw(address fromChain, uint64[2] indices, uint64 loc, bytes data) public {
-    // 1. Transaction proof
-    // First 8 bytes are txTreeDepth
+  // Part 3 of withdrawal. At this point, the user has proven transaction and
+  // receipt. Now the user needs to prove the header.
+  /*function withdraw(bytes headerData, bytes proof) public {
     Withdrawal memory w = pendingWithdrawals[msg.sender];
-    uint64 offset = 8 + txProof(w.txHash, 8, indices[0], data);
-
-    // 2. Prove block header root
-    offset = headerProof(offset, indices[1], fromChain, loc, data);
-
-    // If both proofs succeeded, we can make the withdrawal of tokens!
     EIP20 t = EIP20(w.token);
     t.transfer(msg.sender, w.amount);
     Withdraw(msg.sender, fromChain, w.token, w.amount);
