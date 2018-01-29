@@ -147,7 +147,7 @@ contract Relay {
     // Make sure we are adding blocks
     assert(end > lastBlock[chainId]);
     // Make sure enough validators sign off on the proposed header root
-    assert(checkSignatures(headerRoot, chainId, lastBlock[chainId], end, sigs) == true);
+    assert(checkSignatures(headerRoot, chainId, lastBlock[chainId] + 1, end, sigs) >= validatorThreshold);
     // Add the header root
     roots[chainId].push(headerRoot);
     // Calculate the reward and issue it
@@ -160,7 +160,7 @@ contract Relay {
     }
     msg.sender.transfer(r);
     epochSeed = block.blockhash(block.number);
-    RootStorage(chainId, lastBlock[chainId], end, headerRoot, roots[chainId].length, msg.sender);
+    RootStorage(chainId, lastBlock[chainId] + 1, end, headerRoot, roots[chainId].length, msg.sender);
     lastBlock[chainId] = end;
   }
 
@@ -483,7 +483,7 @@ contract Relay {
   // NOTE: For the first version, any staker will work. For the future, we should
   // select a subset of validators from the staker pool.
   function checkSignatures(bytes32 root, address chain, uint256 start, uint256 end,
-  bytes sigs) public constant returns (bool) {
+  bytes sigs) public constant returns (uint256) {
     bytes32 h = keccak256(root, chain, start, end);
     uint256 passed;
     address[] memory passing = new address[](sigs.length / 96);
@@ -502,7 +502,7 @@ contract Relay {
       // no signature duplicates. This is the most efficient way to do it since
       // storage costs too much.s
       for (uint64 j = 0; j < i / 96; j += 1) {
-        if(passing[j] == valTmp) { noPass = true; }
+        if (passing[j] == valTmp) { noPass = true; }
       }
       if (noPass == false && valTmp != getProposer() && stakers[valTmp] > 0) {
         passing[(i / 96)] = valTmp;
@@ -510,7 +510,7 @@ contract Relay {
       }
     }
 
-    return passed >= validatorThreshold;
+    return passed;
   }
 
   function getStake(address a) public constant returns (uint256) {

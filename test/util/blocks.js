@@ -57,7 +57,7 @@ function getHeader(N, web3, i=1, header=null, parentRes=null) {
 // Get the root
 function getRoot(headers) {
   let nodes = headers;
-  if (!_isPowTwo(headers.length)) { return null; }
+  if (!isPowTwo(headers.length)) { return null; }
   while (nodes.length > 1) {
     let tmpNodes = [];
     for (let i = 0; i < nodes.length / 2; i++) {
@@ -70,7 +70,6 @@ function getRoot(headers) {
 
 function forceMine(n, account, web3, i=0, outerResolve=null, outerReject=null) {
   return new Promise((resolve, reject) => {
-    console.log('i', i)
     if (i == 0) { outerResolve = resolve; outerReject = reject; }
     if (i == n) { return outerResolve(true); }
     else {
@@ -97,7 +96,7 @@ function _hashHeader(block, prevHeader, genesis=false) {
   else { return sha3(prevHeader, block.number, block.timestamp, block.transactionsRoot, block.receiptsRoot); }
 }
 
-function _isPowTwo(n) {
+function isPowTwo(n) {
   n = Math.floor(n);
   if (n == 0) return false;
   while (n != 1) {
@@ -113,3 +112,4 @@ exports.getHeader = getHeader;
 exports.getHeaders = getHeaders;
 exports.getRoot = getRoot;
 exports.forceMine = forceMine;
+exports.isPowTwo = isPowTwo;
