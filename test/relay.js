@@ -82,6 +82,35 @@ contract('Relay', (accounts) => {
     return generateFirstWallets(n, _wallets, nextHDPathIndex);
   }
 
+  async function saveDummyCheckpoints(ends, start, i=0) {
+    if (i == ends.length) { return true; }
+    else {
+
+      let end = ends[i]
+      // Sign and store
+      let signers = [];
+      const headerRoot = sha3('dummy');
+      const msg = val.getMsg(headerRoot, relayB.options.address, parseInt(start), end);
+      let sigs = [];
+      // wallets[i+1] = accounts[i] and we're looking for accounts 1-4
+      const proposer = await relayA.getProposer();
+      console.log('proposer', proposer)
+      for (let i = 0; i < 4; i++) {
+        if (wallets[i+1][0] != proposer) {
+          sigs.push(val.sign(msg, wallets[i+1]));
+          signers.push(wallets[i+1][0]);
+        }
+      }
+      const sigData = val.formatSigs(sigs)
+      const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, end, sigData,
+        { from: proposer, gas: 500000, gasPrice: gasPrice });
+      console.log('Propose root gas usage: ', proposeRoot.receipt.gasUsed);
+      start = end;
+      return saveDummyCheckpoints(ends, start, i);
+    }
+
+  }
+
 
   describe('Wallets', () => {
     it('Should create wallets for first 5 accounts', async () => {
@@ -264,50 +293,61 @@ contract('Relay', (accounts) => {
     const headerRoot = sha3('fake'); // We can fake this one since there are no deposits
 
     it('Should get a set of end points to relay (powers of two)', async () => {
+      let _ends = [];
       // Get to the latest block with a set of end points
       const latestBlock = await web3B.eth.getBlockNumber();
       const lastBlock = await relayA.getLastBlock(relayB.options.address);
 
       // Get the set of end points that we will want to checkpoint. There should
       // only be a handful since they get exponentially smaller
-      ends.push(blocks.getLastPowTwo(parseInt(latestBlock)));
-      let endsSum = ends[0];
+      _ends.push(blocks.getLastPowTwo(parseInt(latestBlock)));
+      let endsSum = _ends[0];
+      console.log('ends', _ends)
       while (blocks.getLastPowTwo(latestBlock - endsSum) > 1) {
         const nextEnd = blocks.getLastPowTwo(latestBlock - endsSum);
-        ends.push(nextEnd);
+        _ends.push(nextEnd);
+        console.log('_ends', _ends)
         endsSum += nextEnd;
       }
+      let endsSum2 = 0;
+      _ends.forEach((end, i) => {
+        ends.push(parseInt(end) + parseInt(lastBlock) + endsSum2);
+        endsSum2 += end;
+      })
+      console.log('final ends', ends)
     });
 
     it('Should go through end points and get signatures', async () => {
-      Promise.map(ends, async (end) => {
-        console.log('end', end);
-        // Sign and store
-        let signers = [];
-        const start = await relayA.getLastBlock(relayB.options.address);
-        const msg = val.getMsg(headerRoot, relayB.options.address, parseInt(start), end);
-        let sigs = [];
-        // wallets[i+1] = accounts[i] and we're looking for accounts 1-4
-        for (let i = 0; i < 4; i++) {
-          if (wallets[i+1][0] != proposer) {
-            sigs.push(val.sign(msg, wallets[i+1]));
-            signers.push(wallets[i+1][0]);
-          }
-        }
-        sigData = val.formatSigs(sigs);
-        const passing = await relayA.checkSignatures(headerRoot, relayB.options.address, parseInt(start), end, sigData);
-        assert(passing === true);
-      })
+      let start = await relayA.getLastBlock(relayB.options.address);
+      let saved = saveDummyCheckpoints(ends, start)
+      assert(saved === true);
+      // Promise.map(ends, async (end) => {
+      //   // Sign and store
+      //   let signers = [];
+      //   const msg = val.getMsg(headerRoot, relayB.options.address, parseInt(start), end);
+      //   let sigs = [];
+      //   // wallets[i+1] = accounts[i] and we're looking for accounts 1-4
+      //   const proposer = await relayA.getProposer();
+      //   console.log('proposer', proposer)
+      //   for (let i = 0; i < 4; i++) {
+      //     if (wallets[i+1][0] != proposer) {
+      //       sigs.push(val.sign(msg, wallets[i+1]));
+      //       signers.push(wallets[i+1][0]);
+      //     }
+      //   }
+      //   const _sigData = val.formatSigs(sigs)
+      //   sigData.push(_sigData);
+      //   const passing = await relayA.checkSignatures(headerRoot, relayB.options.address, parseInt(start), end, _sigData);
+      //   console.log('end', end, 'passing', passing)
+      //   assert(passing === true);
+      //   start = end;
+      //   const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, end, sigData,
+      //     { from: proposer, gas: 500000, gasPrice: gasPrice });
+      //   console.log('Propose root gas usage: ', proposeRoot.receipt.gasUsed);
+      // })
+      // .then(() => { console.log('hello');  })
     });
-
-    /*it('Should submit header and sigs to chain A', async () => {
-      const proposer = await relayA.getProposer()
-      const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, end, sigData,
-        { from: proposer, gas: 500000, gasPrice: gasPrice });
-      console.log('Propose root gas usage: ', proposeRoot.receipt.gasUsed);
-    });*/
-
-  })
+  });
 
   describe('User: Deposit tokens on chain B', () => {
     it('Should deposit 5 token B to the relay on chain B', async () => {
