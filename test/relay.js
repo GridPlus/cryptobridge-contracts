@@ -496,12 +496,16 @@ contract('Relay', (accounts) => {
     });
 
     it('Should submit the required data and make the withdrawal', async () => {
-      // Get the proof
       let hI;
       headers.forEach((header, i) => {
         if (header == depositHeader) { hI = i; }
       })
-      console.log('headers', headers)
+      // This should always be greater than zero since the prior two withdrawal
+      // calls were made after the deposit
+      assert(hI > 0);
+      const prevHeader = headers[hI - 1];
+
+      // Form and format the Merkle proof. This is a standard Merkle tree.
       const proof = tree.getProof(hI, true);
       const longProof = tree.getProof(hI);
       const validateProof = tree.validateProof(longProof, Buffer.from(depositHeader.slice(2), 'hex'), tree.getMerkleRoot());
@@ -513,6 +517,8 @@ contract('Relay', (accounts) => {
       })
       const proofStr = '0x' + proofBytes.toString('hex');
 
+      // Get the index of the root. Need to read through events
+      
       // const withdrawal = await relayA.withdraw(depositBlock.number,
       //   depositBlock.timestamp, proofStr, { from: wallets[2], gas: 500000});
     });
