@@ -36,7 +36,7 @@ contract Relay {
   event Deposit(address indexed user, address indexed toChain,
     address indexed depositToken, address fromChain, uint256 amount);
   event Withdraw(address indexed user, address indexed fromChain,
-    address indexed withdrawToken, address toChain, address depositToken, uint256 amount);
+    address indexed withdrawToken, uint256 amount);
   event TokenAdded(address indexed fromChain, address indexed origToken,
     address indexed newToken);
   event TokenAssociated(address indexed toChain, address indexed fromToken,
@@ -374,13 +374,16 @@ contract Relay {
 
   // Part 3 of withdrawal. At this point, the user has proven transaction and
   // receipt. Now the user needs to prove the header.
-  /*function withdraw(bytes headerData, bytes proof) public {
+  function withdraw(uint256 blockNum, uint256 timestamp, bytes32 prevHeader,
+  uint rootN, bytes proof) public {
     Withdrawal memory w = pendingWithdrawals[msg.sender];
-    EIP20 t = EIP20(w.token);
+    bytes32 leaf = sha3(prevHeader, blockNum, timestamp, w.txRoot, w.receiptsRoot);
+    assert(merkleProof(leaf, roots[w.fromChain][rootN], proof) == true);
+    EIP20 t = EIP20(w.withdrawToken);
     t.transfer(msg.sender, w.amount);
-    Withdraw(msg.sender, fromChain, w.token, w.amount);
+    Withdraw(msg.sender, w.fromChain, w.withdrawToken, w.amount);
     delete pendingWithdrawals[msg.sender];
-  }*/
+  }
 
   function getPendingToken(address user) public constant returns (address) {
     return pendingWithdrawals[user].withdrawToken;
@@ -405,59 +408,6 @@ contract Relay {
   // UTILITY FUNCTIONS
   // ===========================================================================
 
-
-  /*function txProof(bytes32 txHash, uint64 offset, uint64 index, bytes data)
-  internal constant returns (uint64) {
-    bytes32[] memory proof = new bytes32[](MerkleLib.getUint64(0, data));
-    proof[0] = txHash;
-    // Now fill in the Merkle proof for transactions
-    for (uint64 t = 0; t < MerkleLib.getUint64(0, data); t++) {
-      proof[t + 1] = MerkleLib.getBytes32(offset + t * 32, data);
-    }
-    offset += (t - 1) * 32;
-    // Do the transaction proof
-    assert(
-      MerkleLib.merkleProof(
-        index,
-        proof[proof.length - 1],
-        offset,
-        data
-      ) == true
-    );
-    return offset;
-  }
-
-  function headerProof(uint64 offset, uint64 index, address fromChain, uint64 loc,
-  bytes data) internal constant returns (uint64) {
-    uint64 headerTreeDepth = MerkleLib.getUint64(offset, data);
-    bytes32[] memory proof = new bytes32[](headerTreeDepth);
-    // Form the block header we are trying to prove
-    // hash(prevHash, timestamp, blockNum, txRoot)
-    proof[0] = keccak256(
-      getBytes32(offset + 8, data),
-      getBytes32(offset + 40, data),
-      getBytes32(offset + 72, data),
-      proof[proof.length - 1]
-    );
-    offset += 104;
-
-    // Fill the Merkle proof for headers
-    for (uint64 h = 0; h < getUint64(0, data); h++) {
-      proof[h + 1] = getBytes32(offset + (h * 32), data);
-    }
-    offset += (h - 1) * 32;
-
-    // Do the proof
-    assert(
-      MerkleLib.merkleProof(
-        index,
-        headerRoots[fromChain][loc],
-        offset,
-        data
-      ) == true
-    );
-    return offset;
-  }*/
 
   // Check a series of signatures against staker addresses. If there are enough
   // signatures (>= validatorThreshold), return true
@@ -552,6 +502,18 @@ contract Relay {
     return uint64(getUint256(start, data));
   }
 
+  // 'proof' is a concatenated set of [right][hash], i.e. 33 byte chunks
+  function merkleProof(bytes32 leaf, bytes32 targetHash, bytes proof) private constant returns (bool) {
+    bytes32 currentHash = leaf;
+    for (uint i = 0; i < proof.length / 33; i++) {
+      if (BytesLib.slice(proof, i*33, 1)[0] == 1) {
+        currentHash = keccak256(currentHash, BytesLib.slice(proof, i * 33 + 1, 32));
+      } else {
+        currentHash = keccak256(BytesLib.slice(proof, i * 33 + 1, 32));
+      }
+    }
+    return currentHash == targetHash;
+  }
 
   // Staking token can only be set at instantiation!
   function Relay(address token) {

@@ -369,16 +369,14 @@ contract('Relay', (accounts) => {
     it('Should form a Merkle tree from the last block headers, get signatures, and submit to chain A', async () => {
       console.log('getting headers from ', lastBlock + 1, end)
       headers = await blocks.getHeaders(lastBlock + 1, end, web3B);
-      depositHeader = headers[depositBlock.blockNumber - lastBlock + 1];
-      console.log('depositHeader', depositHeader);
+
+      depositHeader = headers[depositBlock.number - (lastBlock + 1)];
       let moddedHeaders = [];
       headers.forEach((header) => { moddedHeaders.push(header.slice(2)); })
       tree = new MerkleTools();
-      console.log('headers', moddedHeaders);
       tree.addLeaves(moddedHeaders);
       tree.makeTree()
       headerRoot = '0x' + tree.getMerkleRoot().toString('hex');
-      console.log('got header root', headerRoot)
       assert(headerRoot != null);
     });
 
@@ -501,12 +499,22 @@ contract('Relay', (accounts) => {
       // Get the proof
       let hI;
       headers.forEach((header, i) => {
-        console.log('header', header, 'depositBlock.hash', depositBlock.hash)
         if (header == depositHeader) { hI = i; }
       })
-      console.log('hi', hI)
+      console.log('headers', headers)
       const proof = tree.getProof(hI, true);
-      console.log('proof', proof)
+      const longProof = tree.getProof(hI);
+      const validateProof = tree.validateProof(longProof, Buffer.from(depositHeader.slice(2), 'hex'), tree.getMerkleRoot());
+      assert(validateProof === true);
+      // Format the proof data
+      let proofBytes = Buffer.from('');
+      proof.forEach((item) => {
+        proofBytes = Buffer.concat([proofBytes, item]);
+      })
+      const proofStr = '0x' + proofBytes.toString('hex');
+
+      // const withdrawal = await relayA.withdraw(depositBlock.number,
+      //   depositBlock.timestamp, proofStr, { from: wallets[2], gas: 500000});
     });
   });
 
