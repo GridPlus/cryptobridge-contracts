@@ -20,14 +20,13 @@ function getHeaders(start, end, web3, headers=[], i=null, parentRes=null) {
   return new Promise((resolve, reject) => {
     let lastBlock = 1;
     let lastHeader = null;
-    if (!i) {
-      i = start;
-    } else {
-      lastBlock = i - 1;
-      lastHeader = headers[headers.length - 1];
-    }
+    if (!i) { i = start; }
+    else { lastBlock = i - 1; }
+    if (headers.length > 0) { lastHeader = headers[headers.length - 1]; }
+
+    console.log('i', i, 'end', end)
     if (!parentRes) { parentRes = resolve; }
-    if (end <= start || !end) { return reject('End not greater than start!'); }
+    if (end <= start || !end) { return resolve([]); }
     if (i == end + 1) { return parentRes(headers); }
     else {
       return getHeader(i, web3, lastHeader)
@@ -45,13 +44,10 @@ function getHeaders(start, end, web3, headers=[], i=null, parentRes=null) {
 // history to modify headers
 function getHeader(N, web3, lastHeader) {
   return new Promise((resolve, reject) => {
-    // if (!parentRes) { parentRes = resolve; };
-    // if (i == N) { return parentRes(header); }
-    // else {
     console.log('N', N, 'lastHeader', lastHeader)
     web3.eth.getBlock(N)
     .then((block) => {
-      const header = hashHeader(block, lastHeader, N==1);
+      const header = hashHeader(block, lastHeader, N==0);
       return resolve(header);
     })
     .catch((err) => { return reject(err); })

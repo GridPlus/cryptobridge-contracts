@@ -57,7 +57,7 @@ let sigs = [];
 let gasPrice = 10 ** 9;
 let RootStorageIndex; // This is needed for the final withdrawal
 let lastHeader;
-let lastBlockNum;
+let lastBlockNumber;
 // Parameters that can be changed throughout the process
 let proposer;
 
@@ -115,7 +115,7 @@ contract('Relay', (accounts) => {
   }
 
   before (async () => {
-    const syncData = await sync.sync(web3A);
+    const syncData = await sync.fsSync(web3B);
     lastHeader = syncData[0];
     lastBlockNumber = syncData[1];
   });
@@ -372,7 +372,13 @@ contract('Relay', (accounts) => {
       assert(blocks.isPowTwo(end - lastBlock) === true);
     });
 
-    it('Should form a Merkle tree from the last block headers, get signatures, and submit to chain A', async () => {
+    it('Should sync to the current block in chain B', async () => {
+      console.log('lastBlockNumber', lastBlockNumber, 'lastHeader', lastHeader)
+      const currentBlock = await sync.syncChain(web3B, lastBlockNumber, lastHeader, lastBlockNumber, true);
+      console.log('currentBlock', currentBlock)
+    });
+
+    /*it('Should form a Merkle tree from the last block headers, get signatures, and submit to chain A', async () => {
       headers = await blocks.getHeaders(lastBlock + 1, end, web3B);
       console.log('prevHeader', headers[depositBlock.number - (lastBlock + 2)])
       console.log('forming depositHeader', blocks.hashHeader(depositBlock, headers[depositBlock.number - (lastBlock + 2)]))
@@ -418,10 +424,10 @@ contract('Relay', (accounts) => {
       const diffBounty = bountyStart - bountyEnd;
       assert(diffBounty === parseInt(reward));
       assert(parseInt(BN(proposerEnd).plus(gasCost).minus(proposerStart)) === parseInt(reward));
-    });
+    });*/
   })
 
-  describe('User: Withdraw tokens on chain A', () => {
+  /*describe('User: Withdraw tokens on chain A', () => {
 
     it('Should check that the deposit txParams hash was signed by wallets[2]', async () => {
       const unsignedDeposit = deposit;
@@ -545,6 +551,6 @@ contract('Relay', (accounts) => {
       console.log('withdrawal', withdrawal)
     });
 
-  });
+  });*/
 
 });
