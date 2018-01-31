@@ -9,7 +9,7 @@
 // NOTE: This means the verification is: block.modHeader == prevBlock.modHeader
 // This verification is done in solidity, so it is ignored
 const sha3 = require('solidity-sha3').default;
-
+const leftPad = require('left-pad');
 
 // Get a range of headers. More efficient than pulling them individually.
 // NOTE: This is kinda cheating, since it references the genesis block as the
@@ -49,7 +49,7 @@ function getHeader(N, web3, i=1, header=null, parentRes=null) {
     else {
       return web3.eth.getBlock(i)
       .then((block) => {
-        header = _hashHeader(block, header, i==1);
+        header = hashHeader(block, header, i==1);
         i++;
         return getHeader(N, web3, i, header, parentRes);
       })
@@ -95,9 +95,19 @@ function getNextPowTwo(n) {
 }
 
 
-function _hashHeader(block, prevHeader, genesis=false) {
-  if (genesis) { return sha3(0, 1, block.timestamp, block.transactionsRoot); }
-  else { return sha3(prevHeader, block.number, block.timestamp, block.transactionsRoot, block.receiptsRoot); }
+function hashHeader(block, prevHeader, genesis=false) {
+  const n = leftPad(parseInt(block.number).toString(16), 64, '0');
+  const ts = leftPad(parseInt(block.timestamp).toString(16), 64, '0');
+  let str;
+  if (genesis) {
+    const emptyHeader = leftPad(0, 64, '0');
+    const genesisN = leftPad(1, 64, '0');
+    str = `0x${emptyHeader}${ts}${genesisN}${block.transactionsRoot.slice(2)}${block.receiptsRoot.slice(2)}`;
+  }
+  else {
+    str = `0x${prevHeader.slice(2)}${ts}${n}${block.transactionsRoot.slice(2)}${block.receiptsRoot.slice(2)}`;
+  }
+  return sha3(str);
 }
 
 function isPowTwo(n) {
@@ -110,6 +120,7 @@ function isPowTwo(n) {
   return true;
 }
 
+exports.hashHeader = hashHeader;
 exports.getLastPowTwo = getLastPowTwo;
 exports.getNextPowTwo = getNextPowTwo;
 exports.getHeader = getHeader;

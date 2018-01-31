@@ -54,6 +54,7 @@ let headers;
 let headerRoot;
 let sigs = [];
 let gasPrice = 10 ** 9;
+let RootStorageIndex; // This is needed for the final withdrawal
 
 // Parameters that can be changed throughout the process
 let proposer;
@@ -102,8 +103,6 @@ contract('Relay', (accounts) => {
         }
       }
       const sigData = val.formatSigs(sigs)
-      // const checkSignatures = await relayA.checkSignatures(headerRoot, relayB.options.address, start, end, sigData);
-      // console.log('checkSignatures', checkSignatures)
       const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, end, sigData,
         { from: proposer, gas: 500000, gasPrice: gasPrice });
       console.log(`Propose root gas usage (${start} - ${end}): ${proposeRoot.receipt.gasUsed}`);
@@ -335,6 +334,11 @@ contract('Relay', (accounts) => {
   });
 
   describe('User: Deposit tokens on chain B', () => {
+    // it('Should make a dummy transaction to have a defined block hahs', async () => {
+    //   const r = await web3A.eth.sendTransaction({ from: accounts[0], to: accounts[1], value: 1 })
+    //   const prevBlock = await web3A.eth.getBlock(r.blockNumber)
+    //   console.log('prevBlock', prevBlock)
+    // })
     it('Should deposit 5 token B to the relay on chain B', async () => {
       await tokenB.methods.approve(relayB.options.address, 5).send({ from: wallets[2][0] })
       const allowance = await tokenB.methods.allowance(accounts[1], relayB.options.address).call();
@@ -343,7 +347,6 @@ contract('Relay', (accounts) => {
       const balance = await tokenB.methods.balanceOf(accounts[1]).call();
       deposit = await web3B.eth.getTransaction(_deposit.transactionHash);
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
-      console.log('depositBlock', depositBlock);
       depositBlockSlim = await web3B.eth.getBlock(_deposit.blockHash, false);
       depositReceipt = await web3B.eth.getTransactionReceipt(_deposit.transactionHash);
     });
@@ -367,7 +370,6 @@ contract('Relay', (accounts) => {
     });
 
     it('Should form a Merkle tree from the last block headers, get signatures, and submit to chain A', async () => {
-      console.log('getting headers from ', lastBlock + 1, end)
       headers = await blocks.getHeaders(lastBlock + 1, end, web3B);
 
       depositHeader = headers[depositBlock.number - (lastBlock + 1)];
@@ -403,6 +405,7 @@ contract('Relay', (accounts) => {
       // TODO: Fast-forward to the next 2^N block
       const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, end, sigData,
         { from: proposer, gas: 500000, gasPrice: gasPrice });
+      RootStorageIndex = parseInt(proposeRoot.logs[0].args.i);
       console.log('Propose root gas usage: ', proposeRoot.receipt.gasUsed);
       const bountyEnd = await web3A.eth.getBalance(relayA.address);
       const proposerEnd = await web3A.eth.getBalance(proposer);
@@ -517,11 +520,24 @@ contract('Relay', (accounts) => {
       })
       const proofStr = '0x' + proofBytes.toString('hex');
 
-      // Get the index of the root. Need to read through events
-      
-      // const withdrawal = await relayA.withdraw(depositBlock.number,
-      //   depositBlock.timestamp, proofStr, { from: wallets[2], gas: 500000});
+      //
+      //
+      // const testNumber = leftPad(parseInt(depositBlock.number).toString(16), 64, '0');
+      // const testTs = leftPad(parseInt(depositBlock.timestamp).toString(16), 64, '0');
+      // const testStr = `0x${prevHeader.slice(2)}${testTs}${testNumber}${depositBlock.transactionsRoot.slice(2)}${depositBlock.receiptsRoot.slice(2)}`;
+      // console.log('testStr', testStr);
+      // const testhash = sha3(testStr);
+      // console.log('testhash', testhash)
+
+      console.log('merkleroot', tree.getMerkleRoot())
+      console.log('RootStorageIndex', RootStorageIndex)
+
+      const withdrawal = await relayA.withdraw(depositBlock.number,
+         depositBlock.timestamp, prevHeader, RootStorageIndex, proofStr,
+         { from: wallets[2][0], gas: 500000});
+      console.log('withdrawal', withdrawal)
     });
+
   });
 
 });

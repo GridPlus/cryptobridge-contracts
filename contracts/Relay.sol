@@ -160,7 +160,7 @@ contract Relay {
     }
     msg.sender.transfer(r);
     epochSeed = block.blockhash(block.number);
-    RootStorage(chainId, lastBlock[chainId] + 1, end, headerRoot, roots[chainId].length, msg.sender);
+    RootStorage(chainId, lastBlock[chainId] + 1, end, headerRoot, roots[chainId].length - 1, msg.sender);
     lastBlock[chainId] = end;
   }
 
@@ -375,14 +375,15 @@ contract Relay {
   // Part 3 of withdrawal. At this point, the user has proven transaction and
   // receipt. Now the user needs to prove the header.
   function withdraw(uint256 blockNum, uint256 timestamp, bytes32 prevHeader,
-  uint rootN, bytes proof) public {
+  uint rootN, bytes proof) public constant returns (bytes32) {
     Withdrawal memory w = pendingWithdrawals[msg.sender];
-    bytes32 leaf = sha3(prevHeader, blockNum, timestamp, w.txRoot, w.receiptsRoot);
-    assert(merkleProof(leaf, roots[w.fromChain][rootN], proof) == true);
-    EIP20 t = EIP20(w.withdrawToken);
+    bytes32 leaf = keccak256(prevHeader, timestamp, blockNum, w.txRoot, w.receiptsRoot);
+    /*assert(merkleProof(leaf, roots[w.fromChain][rootN], proof) == true);*/
+    return roots[w.fromChain][rootN];
+    /*EIP20 t = EIP20(w.withdrawToken);
     t.transfer(msg.sender, w.amount);
     Withdraw(msg.sender, w.fromChain, w.withdrawToken, w.amount);
-    delete pendingWithdrawals[msg.sender];
+    delete pendingWithdrawals[msg.sender];*/
   }
 
   function getPendingToken(address user) public constant returns (address) {
@@ -440,7 +441,6 @@ contract Relay {
         passed ++;
       }
     }
-
     return passed;
   }
 
