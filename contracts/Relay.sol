@@ -379,7 +379,7 @@ contract Relay {
     Withdrawal memory w = pendingWithdrawals[msg.sender];
     bytes32 leaf = keccak256(prevHeader, timestamp, blockNum, w.txRoot, w.receiptsRoot);
     /*assert(merkleProof(leaf, roots[w.fromChain][rootN], proof) == true);*/
-    return roots[w.fromChain][rootN];
+    return leaf;
     /*EIP20 t = EIP20(w.withdrawToken);
     t.transfer(msg.sender, w.amount);
     Withdraw(msg.sender, w.fromChain, w.withdrawToken, w.amount);

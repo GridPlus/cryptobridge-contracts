@@ -27,9 +27,10 @@ function getHeaders(start, end, web3, headers=[], i=null, parentRes=null) {
       lastHeader = headers[headers.length - 1];
     }
     if (!parentRes) { parentRes = resolve; }
+    if (end <= start || !end) { return reject('End not greater than start!'); }
     if (i == end + 1) { return parentRes(headers); }
     else {
-      return getHeader(i, web3, lastBlock, lastHeader)
+      return getHeader(i, web3, lastHeader)
       .then((header) => {
         headers.push(header);
         i++;
@@ -42,19 +43,18 @@ function getHeaders(start, end, web3, headers=[], i=null, parentRes=null) {
 
 // Get a modified header for block N. This requires we look through the entire
 // history to modify headers
-function getHeader(N, web3, i=1, header=null, parentRes=null) {
+function getHeader(N, web3, lastHeader) {
   return new Promise((resolve, reject) => {
-    if (!parentRes) { parentRes = resolve; };
-    if (i == N) { return parentRes(header); }
-    else {
-      return web3.eth.getBlock(i)
-      .then((block) => {
-        header = hashHeader(block, header, i==1);
-        i++;
-        return getHeader(N, web3, i, header, parentRes);
-      })
-      .catch((err) => { return reject(err); })
-    }
+    // if (!parentRes) { parentRes = resolve; };
+    // if (i == N) { return parentRes(header); }
+    // else {
+    console.log('N', N, 'lastHeader', lastHeader)
+    web3.eth.getBlock(N)
+    .then((block) => {
+      const header = hashHeader(block, lastHeader, N==1);
+      return resolve(header);
+    })
+    .catch((err) => { return reject(err); })
   });
 }
 
@@ -105,6 +105,7 @@ function hashHeader(block, prevHeader, genesis=false) {
     str = `0x${emptyHeader}${ts}${genesisN}${block.transactionsRoot.slice(2)}${block.receiptsRoot.slice(2)}`;
   }
   else {
+    console.log('prevHeader', prevHeader)
     str = `0x${prevHeader.slice(2)}${ts}${n}${block.transactionsRoot.slice(2)}${block.receiptsRoot.slice(2)}`;
   }
   return sha3(str);

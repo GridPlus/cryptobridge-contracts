@@ -19,6 +19,7 @@ const EthereumTx = require('ethereumjs-tx');
 const EthUtil = require('ethereumjs-util');
 const BN = require('big-number');
 const MerkleTools = require('merkle-tools');
+const sync = require('./util/sync.js');
 
 // Need two of these
 const _providerA = `http://${truffleConf.development.host}:${truffleConf.development.port}`;
@@ -55,7 +56,8 @@ let headerRoot;
 let sigs = [];
 let gasPrice = 10 ** 9;
 let RootStorageIndex; // This is needed for the final withdrawal
-
+let lastHeader;
+let lastBlockNum;
 // Parameters that can be changed throughout the process
 let proposer;
 
@@ -111,6 +113,12 @@ contract('Relay', (accounts) => {
       return saveDummyCheckpoints(ends, start, i);
     }
   }
+
+  before (async () => {
+    const syncData = await sync.sync(web3A);
+    lastHeader = syncData[0];
+    lastBlockNumber = syncData[1];
+  });
 
   describe('Wallets', () => {
     it('Should create wallets for first 5 accounts', async () => {
@@ -334,11 +342,6 @@ contract('Relay', (accounts) => {
   });
 
   describe('User: Deposit tokens on chain B', () => {
-    // it('Should make a dummy transaction to have a defined block hahs', async () => {
-    //   const r = await web3A.eth.sendTransaction({ from: accounts[0], to: accounts[1], value: 1 })
-    //   const prevBlock = await web3A.eth.getBlock(r.blockNumber)
-    //   console.log('prevBlock', prevBlock)
-    // })
     it('Should deposit 5 token B to the relay on chain B', async () => {
       await tokenB.methods.approve(relayB.options.address, 5).send({ from: wallets[2][0] })
       const allowance = await tokenB.methods.allowance(accounts[1], relayB.options.address).call();
@@ -371,12 +374,14 @@ contract('Relay', (accounts) => {
 
     it('Should form a Merkle tree from the last block headers, get signatures, and submit to chain A', async () => {
       headers = await blocks.getHeaders(lastBlock + 1, end, web3B);
-
+      console.log('prevHeader', headers[depositBlock.number - (lastBlock + 2)])
+      console.log('forming depositHeader', blocks.hashHeader(depositBlock, headers[depositBlock.number - (lastBlock + 2)]))
       depositHeader = headers[depositBlock.number - (lastBlock + 1)];
       let moddedHeaders = [];
       headers.forEach((header) => { moddedHeaders.push(header.slice(2)); })
       tree = new MerkleTools();
       tree.addLeaves(moddedHeaders);
+      console.log('tree headers:', moddedHeaders)
       tree.makeTree()
       headerRoot = '0x' + tree.getMerkleRoot().toString('hex');
       assert(headerRoot != null);
@@ -528,9 +533,11 @@ contract('Relay', (accounts) => {
       // console.log('testStr', testStr);
       // const testhash = sha3(testStr);
       // console.log('testhash', testhash)
-
+      console.log('depositHeader', depositHeader)
       console.log('merkleroot', tree.getMerkleRoot())
       console.log('RootStorageIndex', RootStorageIndex)
+      console.log('proof', proof)
+      console.log('proof[1]', proof[1].toString('hex'))
 
       const withdrawal = await relayA.withdraw(depositBlock.number,
          depositBlock.timestamp, prevHeader, RootStorageIndex, proofStr,
