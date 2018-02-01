@@ -3,3 +3,4 @@ build
 installed_contracts
 secrets.json
 node_modules
+lastBlock

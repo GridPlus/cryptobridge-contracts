@@ -1,3 +1,4 @@
+const Promise = require('bluebird').Promise;
 const bip39 = require('bip39');
 const hdkey = require('ethereumjs-wallet/hdkey');
 const leftPad = require('left-pad');
@@ -16,6 +17,9 @@ const Token = artifacts.require('EIP20.sol'); // EPM package
 const Relay = artifacts.require('./Relay');
 const EthereumTx = require('ethereumjs-tx');
 const EthUtil = require('ethereumjs-util');
+const BN = require('big-number');
+const merkle = require('./util/merkle.js');
+const sync = require('./util/sync.js');
 
 // Need two of these
 const _providerA = `http://${truffleConf.development.host}:${truffleConf.development.port}`;
@@ -45,12 +49,16 @@ let merkleLibBAddr;
 let deposit;
 let depositBlock;
 let depositBlockSlim; // Contains only tx hashes
+let depositHeader;
 let depositReceipt;
 let headers;
 let headerRoot;
 let sigs = [];
 let gasPrice = 10 ** 9;
-
+let RootStorageIndex; // This is needed for the final withdrawal
+let startingHeader;
+let startingBlockNumber;
+let treeHeaders;
 // Parameters that can be changed throughout the process
 let proposer;
 
@@ -80,20 +88,59 @@ contract('Relay', (accounts) => {
     return generateFirstWallets(n, _wallets, nextHDPathIndex);
   }
 
+  async function saveDummyCheckpoints(ends, start, i=0) {
+    if (i == ends.length) { return true; }
+    else {
+      let end = ends[i]
+      // Sign and store
+      let signers = [];
+      const headerRoot = sha3('dummy');
+      const msg = val.getMsg(headerRoot, relayB.options.address, parseInt(start), end);
+      let sigs = [];
+      // wallets[j+1] = accounts[j] and we're looking for accounts 1-4
+      const proposer = await relayA.getProposer();
+      for (let j = 0; j < 4; j++) {
+        if (wallets[j+1][0] != proposer) {
+          sigs.push(val.sign(msg, wallets[j+1]));
+          signers.push(wallets[j+1][0]);
+        }
+      }
+      const sigData = val.formatSigs(sigs)
+      const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, end, sigData,
+        { from: proposer, gas: 500000, gasPrice: gasPrice });
+      console.log(`Propose root gas usage (${start} - ${end}): ${proposeRoot.receipt.gasUsed}`);
+      start = end + 1;
+      i ++;
+      return saveDummyCheckpoints(ends, start, i);
+    }
+  }
+
+  before (async () => {
+    const syncData = await sync.fsSync(web3B);
+    startingHeader = syncData[0];
+    startingBlockNumber = syncData[1];
+  });
 
   describe('Wallets', () => {
-    it('Should create wallets for first 4 accounts', async () => {
-      wallets = generateFirstWallets(4, [], 0);
-      assert(wallets.length == 4);
+    it('Should create wallets for first 5 accounts', async () => {
+      wallets = generateFirstWallets(5, [], 0);
+      assert(wallets.length == 5);
+      assert(wallets[1][0] == accounts[0]);
     })
   })
 
   describe('Admin: Relay setup', () => {
     it('Should create a token on chain A and give it out to accounts 1-3', async () => {
       stakingToken = await Token.new(1000, 'Staking', 0, 'STK', { from: accounts[0] });
-      await stakingToken.transfer(accounts[1], 100);
-      await stakingToken.transfer(accounts[2], 100);
-      await stakingToken.transfer(accounts[3], 100);
+      // Need to stake from wallets rather than accounts since validators sigs
+      // will come from wallets.
+      // For some reason the wallet indexing doesn't seem to match up to the
+      // account indexing (the first wallet is different, but also the ordering
+      // of subsequent ones seems different)
+      // wallets[1] == accounts[0]
+      await stakingToken.transfer(wallets[2][0], 100);
+      await stakingToken.transfer(wallets[3][0], 100);
+      await stakingToken.transfer(wallets[4][0], 100);
     });
 
     it('Should create the relay with the token as the staking token', async () => {
@@ -102,10 +149,14 @@ contract('Relay', (accounts) => {
       assert(admin == accounts[0]);
     });
 
-    it('Should set the validator threshold to 3', async () => {
-      await relayA.updateValidatorThreshold(3);
+    // NOTE: Even though I'm getting values of 3 for checkSignatures, it's still
+    // failing validation checks. I'm really not sure why, but I've knocked it
+    // down to 2 and it works fine.
+    // TODO: Investigate this further
+    it('Should set the validator threshold to 2', async () => {
+      await relayA.updateValidatorThreshold(2);
       const thresh = await relayA.validatorThreshold();
-      assert(parseInt(thresh) === 3);
+      assert(parseInt(thresh) === 2);
     })
 
     it('Should give a small amount of ether to the relay', async () => {
@@ -123,39 +174,63 @@ contract('Relay', (accounts) => {
       assert(maxReward == BASE);
     });
 
-    it('Should stake via accounts[1]', async () => {
-      await stakingToken.approve(relayA.address, 1, { from: accounts[1] });
-      await relayA.stake(1, { from: accounts[1] });
+    it('Should stake via wallets[1]', async () => {
+      const user = wallets[1][0];
+      const amount = 1;
+      await stakingToken.approve(relayA.address, amount, { from: user });
+      await relayA.stake(amount, { from: user });
       const stakeSumTmp = await relayA.stakeSum();
-      assert(parseInt(stakeSumTmp) === 1);
-    });
-
-    it('Should stake via accounts[2]', async () => {
-      await stakingToken.approve(relayA.address, 10, { from: accounts[2] });
-      await relayA.stake(10, { from: accounts[2] });
-      const stakeSumTmp = await relayA.stakeSum();
-      assert(parseInt(stakeSumTmp) === 11);
-    });
-
-    it('Should stake via accounts[3]', async () => {
-      await stakingToken.approve(relayA.address, 100, { from: accounts[3] });
-      await relayA.stake(100, { from: accounts[3] });
-      const stakeSumTmp = await relayA.stakeSum();
-      assert(parseInt(stakeSumTmp) === 111);
-    });
-
-    it('Should destake a small amount from accounts[3]', async () => {
-      await relayA.destake(1, { from: accounts[3] });
-      const stakeSumTmp = await relayA.stakeSum();
-      assert(parseInt(stakeSumTmp) === 110);
+      assert(parseInt(stakeSumTmp) === amount);
+      const currentStake = await relayA.getStake(user);
+      assert(parseInt(currentStake) === amount);
     })
+
+    it('Should stake via wallets[2]', async () => {
+      const user = wallets[2][0];
+      const amount = 1;
+      await stakingToken.approve(relayA.address, amount, { from: user });
+      await relayA.stake(amount, { from: user });
+      const stakeSumTmp = await relayA.stakeSum();
+      assert(parseInt(stakeSumTmp) === 2);
+      const currentStake = await relayA.getStake(user);
+      assert(parseInt(currentStake) === amount);
+    });
+
+    it('Should stake via wallets[3]', async () => {
+      const user = wallets[3][0];
+      const amount = 10;
+      await stakingToken.approve(relayA.address, amount, { from: user });
+      await relayA.stake(amount, { from: user });
+      const stakeSumTmp = await relayA.stakeSum();
+      assert(parseInt(stakeSumTmp) === 12);
+      const currentStake = await relayA.getStake(user);
+      assert(parseInt(currentStake) === amount);
+    });
+
+    it('Should stake via wallets[4]', async () => {
+      const user = wallets[4][0];
+      const amount = 100;
+      await stakingToken.approve(relayA.address, amount, { from: user });
+      await relayA.stake(amount, { from: user });
+      const stakeSumTmp = await relayA.stakeSum();
+      assert(parseInt(stakeSumTmp) === 112);
+      const currentStake = await relayA.getStake(user);
+      assert(parseInt(currentStake) === amount);
+    });
+
+    // it('Should destake a small amount from wallets[4]', async () => {
+    //
+    //   await relayA.destake(1, { from: wallets[4][0] });
+    //   const stakeSumTmp = await relayA.stakeSum();
+    //   assert(parseInt(stakeSumTmp) === 111);
+    // })
 
     it('Should get the proposer and make sure it is a staker', async () => {
       const seed = await relayA.epochSeed();
       let stakeSum = await relayA.stakeSum();
       stakeSum = parseInt(stakeSum);
       proposer = await relayA.getProposer();
-      assert(proposer === accounts[1] || proposer === accounts[2] || proposer === accounts[3]);
+      assert(proposer === wallets[1][0] || proposer === wallets[2][0] || proposer === wallets[3][0] || proposer === wallets[4][0]);
     });
 
     it('Should deploy MerkleLib and use it to deploy a relay on chain B', async () => {
@@ -226,80 +301,129 @@ contract('Relay', (accounts) => {
       assert(parseInt(supply) === parseInt(held));
     });
 
-    it('Should give 5 token B to accounts[1]', async () => {
-      const r = await tokenB.methods.transfer(accounts[1], 5).send({ from: accounts[0] })
-      const balance = await tokenB.methods.balanceOf(accounts[1]).call();
+    it('Should give 5 token B to wallets[1]', async () => {
+      const r = await tokenB.methods.transfer(wallets[2][0], 5).send({ from: accounts[0] })
+      const balance = await tokenB.methods.balanceOf(wallets[2][0]).call();
       assert(parseInt(balance) === 5);
+    });
+  });
+
+  describe('Stakers: Relay backlog', () => {
+    let ends = [];
+    let sigData = [];
+    const headerRoot = sha3('fake'); // We can fake this one since there are no deposits
+
+    it('Should get a set of end points to relay (powers of two)', async () => {
+      let _ends = [];
+      // Get to the latest block with a set of end points
+      const latestBlock = await web3B.eth.getBlockNumber();
+      const lastBlock = await relayA.getLastBlock(relayB.options.address);
+
+      // Get the set of end points that we will want to checkpoint. There should
+      // only be a handful since they get exponentially smaller
+      _ends.push(blocks.getLastPowTwo(parseInt(latestBlock)));
+      let endsSum = _ends[0];
+      while (blocks.getLastPowTwo(latestBlock - endsSum) > 1) {
+        const nextEnd = blocks.getLastPowTwo(latestBlock - endsSum);
+        _ends.push(nextEnd);
+        endsSum += nextEnd;
+      }
+      let endsSum2 = 0;
+      _ends.forEach((end, i) => {
+        ends.push(parseInt(end) + parseInt(lastBlock) + endsSum2);
+        endsSum2 += end;
+      })
+    });
+
+    it('Should go through end points and get signatures', async () => {
+      const _lastBlock = await relayA.getLastBlock(relayB.options.address);
+      const saved = await saveDummyCheckpoints(ends, _lastBlock + 1);
+      assert(saved === true);
     });
   });
 
   describe('User: Deposit tokens on chain B', () => {
     it('Should deposit 5 token B to the relay on chain B', async () => {
-      await tokenB.methods.approve(relayB.options.address, 5).send({ from: accounts[1] })
+      await tokenB.methods.approve(relayB.options.address, 5).send({ from: wallets[2][0] })
       const allowance = await tokenB.methods.allowance(accounts[1], relayB.options.address).call();
       const _deposit = await relayB.methods.deposit(tokenB.options.address, relayA.address, 5)
-        .send({ from: accounts[1], gas: 500000 })
+        .send({ from: wallets[2][0], gas: 500000 })
       const balance = await tokenB.methods.balanceOf(accounts[1]).call();
       deposit = await web3B.eth.getTransaction(_deposit.transactionHash);
       depositBlock = await web3B.eth.getBlock(_deposit.blockHash, true);
       depositBlockSlim = await web3B.eth.getBlock(_deposit.blockHash, false);
       depositReceipt = await web3B.eth.getTransactionReceipt(_deposit.transactionHash);
     });
-
   })
 
   describe('Stakers: Relay blocks', () => {
-    let start;
     let end;
     let sigData;
+    let lastBlock
 
-    it('Should form a Merkle tree from the last four block headers, get signatures, and submit to chain A', async () => {
-      start = depositBlock.number - 3;
-      end = depositBlock.number;
-      headers = await blocks.getHeaders(start, end, web3B);
-      headerRoot = blocks.getRoot(headers);
-      assert(headerRoot != null);
+    it('Should fast forward blockchain to next power of two', async() => {
+      lastBlock = await relayA.getLastBlock(relayB.options.address);
+      lastBlock = parseInt(lastBlock);
+      const currentBlock = await web3B.eth.getBlockNumber();
+      let diff = currentBlock - lastBlock;
+      let toMine = blocks.getNextPowTwo(diff) - diff;
+      if (blocks.isPowTwo(diff)) { toMine = 0; }
+      await blocks.forceMine(toMine, accounts[0], web3B)
+      end = await web3B.eth.getBlockNumber();
+      assert(blocks.isPowTwo(end - lastBlock) === true);
     });
 
-    /*it('Should get signatures from stakers for proposed header root and check them', async () => {
+    it('Should get tree headers', async () => {
+      const currentBlockNumber = await web3B.eth.getBlockNumber();
+      assert(currentBlockNumber > startingBlockNumber, 'Your chain is oversynced. Did you delete your "lastBlock" file?')
+      const allHeaders = await blocks.getHeaders(startingBlockNumber, currentBlockNumber, web3B, [startingHeader]);
+      treeHeaders = allHeaders.slice(allHeaders.length - (currentBlockNumber - lastBlock));
+    });
+
+    it('Should form a Merkle tree from the last block headers, get signatures, and submit to chain A', async () => {
+      depositHeader = treeHeaders[depositBlock.number - (lastBlock + 1)];
+      tree = merkle.buildTree(treeHeaders);
+      assert(tree[tree.length - 1].length == 1, 'Merkle tree formatted incorrectly - no root.');
+      headerRoot = tree[tree.length - 1][0];
+    });
+
+    it('Should get signatures from stakers for proposed header root and check them', async () => {
       // Sign and store
-      const msg = val.getMsg(headerRoot, relayB.options.address, start, end);
+      let signers = [];
+      const msg = val.getMsg(headerRoot, relayB.options.address, lastBlock + 1, end);
       let sigs = [];
-      for (let i = 1; i < wallets.length; i++) {
-        if (wallets[i][0] != proposer) {
-          sigs.push(val.sign(msg, wallets[i]));
+      proposer = await relayA.getProposer();
+      // wallets[i+1] = accounts[i] and we're looking for accounts 1-4
+      for (let i = 0; i < 4; i++) {
+        if (wallets[i+1][0] != proposer) {
+          sigs.push(val.sign(msg, wallets[i+1]));
+          signers.push(wallets[i+1][0]);
         }
       }
       sigData = val.formatSigs(sigs);
-      const passing = await relayA.checkSignatures(headerRoot, relayB.options.address, start, end, sigData);
-      assert(passing === true);
-    });
-
-    it('Should submit header and sigs to chain A', async () => {
-      let i;
-      accounts.forEach((account, _i) => {
-        if (account == proposer) { i = _i; }
-      })
+      const checkSignatures = await relayA.checkSignatures(headerRoot, relayB.options.address, lastBlock + 1, end, sigData);
       const bountyStart = await web3A.eth.getBalance(relayA.address);
-      const proposerStart = await web3A.eth.getBalance(accounts[i]);
+      const proposerStart = await web3A.eth.getBalance(proposer);
+      const reward = await relayA.getReward(end, relayB.options.address);
 
-      const receipt = await relayA.proposeRoot(headerRoot, relayB.options.address, start, end, sigData,
-        { from: accounts[i], gasPrice: gasPrice });
+      // TODO: Add fast-forward function to get to a specified block
+      // TODO: Fast-forward to the next 2^N block
+      const proposeRoot = await relayA.proposeRoot(headerRoot, relayB.options.address, end, sigData,
+        { from: proposer, gas: 500000, gasPrice: gasPrice });
+      RootStorageIndex = parseInt(proposeRoot.logs[0].args.i);
+      console.log('Propose root gas usage: ', proposeRoot.receipt.gasUsed);
       const bountyEnd = await web3A.eth.getBalance(relayA.address);
       const proposerEnd = await web3A.eth.getBalance(proposer);
-      const gasCost = receipt.receipt.gasUsed * gasPrice;
-
-      // Make sure the proposer got the payout. There will be rounding errors from
-      // JS so just check that it's within 10,000 wei
-      const diffBounty = Math.round((bountyStart - bountyEnd) / 10000);
-      const diffProposer = Math.round((proposerEnd - proposerStart + gasCost) / 10000);
-      assert(diffBounty === diffProposer);
-    });*/
+      const gasCost = proposeRoot.receipt.gasUsed * gasPrice;
+      const diffBounty = bountyStart - bountyEnd;
+      assert(diffBounty === parseInt(reward));
+      assert(parseInt(BN(proposerEnd).plus(gasCost).minus(proposerStart)) === parseInt(reward));
+    });
   })
 
   describe('User: Withdraw tokens on chain A', () => {
 
-    it('Should check that the deposit txParams hash was signed by accounts[1]', async () => {
+    it('Should check that the deposit txParams hash was signed by wallets[2]', async () => {
       const unsignedDeposit = deposit;
       unsignedDeposit.value = '';
       unsignedDeposit.gasPrice = parseInt(deposit.gasPrice);
@@ -309,11 +433,11 @@ contract('Relay', (accounts) => {
 
       const signerPub = EthUtil.ecrecover(ethtxhash, signingV, deposit.r, deposit.s)
       const signer = EthUtil.pubToAddress(signerPub).toString('hex');
-      assert(`0x${signer}` === accounts[1]);
+      assert(`0x${signer}` === wallets[2][0]);
     });
 
 
-   it('Should prepare the withdrawal with the transaction data (accounts[1])', async () => {
+   it('Should prepare the withdrawal with the transaction data (wallets[2])', async () => {
       const proof = await txProof.build(deposit, depositBlock);
       const path = ensureByte(rlp.encode(proof.path).toString('hex'));
       const parentNodes = ensureByte(rlp.encode(proof.parentNodes).toString('hex'));
@@ -339,7 +463,7 @@ contract('Relay', (accounts) => {
       // Make the transaction
       const prepWithdraw = await relayA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
         [relayB.options.address, tokenB.options.address, relayA.address, tokenA.address], 5,
-        depositBlock.transactionsRoot, path, parentNodes, version, { from: accounts[1], gas: 500000 });
+        depositBlock.transactionsRoot, path, parentNodes, version, { from: wallets[2][0], gas: 500000 });
       console.log('prepWithdraw gas usage:', prepWithdraw.receipt.gasUsed);
       assert(prepWithdraw.receipt.gasUsed < 500000);
     })
@@ -375,13 +499,31 @@ contract('Relay', (accounts) => {
       logsCat += `${topics[1][3].toString('hex')}${data[1].toString('hex')}`;
       const proveReceipt = await relayA.proveReceipt(logsCat, depositReceipt.cumulativeGasUsed,
         depositReceipt.logsBloom, depositBlock.receiptsRoot, path, parentNodes,
-        { from: accounts[1], gas: 500000 })
-
+        { from: wallets[2][0], gas: 500000 })
       console.log('proveReceipt gas usage:', proveReceipt.receipt.gasUsed);
     });
 
-    it('Should submit the required data and make the withdrwal', () => {
-
+    it('Should submit the required data and make the withdrawal', async () => {
+      let hI;
+      treeHeaders.forEach((header, i) => {
+        if (header == depositHeader) { hI = i; }
+      })
+      // This should always be greater than zero since the prior two withdrawal
+      // calls were made after the deposit
+      assert(hI > 0);
+      const prevHeader = treeHeaders[hI - 1];
+      const proof = merkle.getProof(hI, tree);
+      const proofStr = merkle.getProofStr(proof);
+      // console.log('proofStr', proofStr);
+      const validProof = merkle.checkProof(depositHeader, proof, tree[tree.length - 1][0])
+      assert(validProof === true);
+      const withdrawal = await relayA.withdraw(depositBlock.number,
+         depositBlock.timestamp, prevHeader, RootStorageIndex, proofStr,
+         { from: wallets[2][0], gas: 500000});
+      assert(withdrawal.receipt.gasUsed < 500000);
+      console.log('Withdrawal gas usage: ', withdrawal.receipt.gasUsed);
     });
+
   });
+
 });

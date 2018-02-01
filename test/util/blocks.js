@@ -9,23 +9,26 @@
 // NOTE: This means the verification is: block.modHeader == prevBlock.modHeader
 // This verification is done in solidity, so it is ignored
 const sha3 = require('solidity-sha3').default;
-
+const leftPad = require('left-pad');
 
 // Get a range of headers. More efficient than pulling them individually.
+// NOTE: This is kinda cheating, since it references the genesis block as the
+// "previousHeader" for all ranges. That's fine for thse test cases, but will
+// not fly for production systems. PreviousHeaders should be saved in persistant
+// storage
 function getHeaders(start, end, web3, headers=[], i=null, parentRes=null) {
   return new Promise((resolve, reject) => {
     let lastBlock = 1;
     let lastHeader = null;
-    if (!i) {
-      i = start;
-    } else {
-      lastBlock = i - 1;
-      lastHeader = headers[headers.length - 1];
-    }
+    if (!i) { i = start; }
+    else { lastBlock = i - 1; }
+    if (headers.length > 0) { lastHeader = headers[headers.length - 1]; }
+
     if (!parentRes) { parentRes = resolve; }
+    if (end <= start || !end) { return resolve([]); }
     if (i == end + 1) { return parentRes(headers); }
     else {
-      return getHeader(i, web3, lastBlock, lastHeader)
+      return getHeader(i, web3, lastHeader)
       .then((header) => {
         headers.push(header);
         i++;
@@ -38,26 +41,21 @@ function getHeaders(start, end, web3, headers=[], i=null, parentRes=null) {
 
 // Get a modified header for block N. This requires we look through the entire
 // history to modify headers
-function getHeader(N, web3, i=1, header=null, parentRes=null) {
+function getHeader(N, web3, lastHeader) {
   return new Promise((resolve, reject) => {
-    if (!parentRes) { parentRes = resolve; };
-    if (i == N) { return parentRes(header); }
-    else {
-      return web3.eth.getBlock(i)
-      .then((block) => {
-        header = _hashHeader(block, header, i==1);
-        i++;
-        return getHeader(N, web3, i, header, parentRes);
-      })
-      .catch((err) => { return reject(err); })
-    }
+    web3.eth.getBlock(N)
+    .then((block) => {
+      const header = hashHeader(block, lastHeader, N==0);
+      return resolve(header);
+    })
+    .catch((err) => { return reject(err); })
   });
 }
 
 // Get the root
 function getRoot(headers) {
   let nodes = headers;
-  if (!_isPowTwo(headers.length)) { return null; }
+  if (!isPowTwo(headers.length)) { return null; }
   while (nodes.length > 1) {
     let tmpNodes = [];
     for (let i = 0; i < nodes.length / 2; i++) {
@@ -68,83 +66,45 @@ function getRoot(headers) {
   return nodes[0];
 }
 
-
-/*
-// This was fun, but I actually don't need it :|
-// Keeping for reference
-
-function getProof(headers, i) {
-  console.log('headers', headers)
-  console.log('i', i);
-  let nodes = headers;
-  let hashes = [];
-  let levelCounter = 0;
-  // Get the tree of hashes
-  while (nodes.length > 1) {
-    let tmpNodes = [];
-    for (let j = 0; j < Math.floor(nodes.length / 2); j++) {
-      const node = sha3(nodes[j], nodes[j+1]);
-      tmpNodes.push(node);
-      hashes.push(node);
+function forceMine(n, account, web3, i=0, outerResolve=null, outerReject=null) {
+  return new Promise((resolve, reject) => {
+    if (i == 0) { outerResolve = resolve; outerReject = reject; }
+    if (i == n) { return outerResolve(true); }
+    else {
+      web3.eth.sendTransaction({ from: account, to: account, value: 1})
+      .then(() => { forceMine(n, account, web3, i+1, outerResolve, outerReject); })
+      .catch((err) => { return outerReject(err); })
     }
-    nodes = tmpNodes;
-    levelCounter++;
-  }
-  console.log('hashes', hashes)
-  let proof = [];
-  // Get leaves
-  if (i % 2 == 0) {
-    // Left leaf
-    proof.push(headers[i]);
-    proof.push(headers[i+1]);
-  } else {
-    // Right leaf
-    proof.push(headers[i-1]);
-    proof.push(headers[i]);
-  }
-  // Start at the first level
-  i = Math.floor(i / 2);
-  console.log('new i', i)
-  let offset = 0;
-  // Go through each level and grab the partner hash
-  for (let k = 1; k < levelCounter; k++) {
-    console.log('offset', offset)
-    if (i % 2 == 0) {
-      proof.push(hashes[offset + i]);
-    } else {
-      proof.push(hashes[offset + i - 1]);
-    }
-    // Push the length of this tree level onto the offset
-    offset += nodes.length / 2 ** k;
-  }
-  return proof;
+  })
 }
 
-// Prove that a
-function prove(proof, i, headerRoot, start, end) {
-  let h = '0x0000000000000000000000000000000000000000000000000000000000000000';
-  for (let j = 1; j < nodes.length; j++) {
-    let remaining = nodes.length - j;
-    while (remaining > 0 && i % 2 == 1 && i > 2 ** remaining) {
-      i = Math.floor(i / 2) + 1;
-    }
-    if (i % 2 == 0) {
-      h = sha3(nodes[i], h);
-    } else {
-      h = sha3(h, nodes[i]);
-      i = Math.floor(i / 2) + 1;
-    }
+// Return the most recent power of two
+function getLastPowTwo(n) {
+  return Math.pow(2, Math.floor(Math.log(n) / Math.log(2)))
+}
+
+// Return the next power of two
+function getNextPowTwo(n) {
+  return Math.pow(2, Math.ceil(Math.log(n) / Math.log(2)))
+}
+
+
+function hashHeader(block, prevHeader, genesis=false) {
+  const n = leftPad(parseInt(block.number).toString(16), 64, '0');
+  const ts = leftPad(parseInt(block.timestamp).toString(16), 64, '0');
+  let str;
+  if (genesis) {
+    const emptyHeader = leftPad(0, 64, '0');
+    const genesisN = leftPad(1, 64, '0');
+    str = `0x${emptyHeader}${ts}${genesisN}${block.transactionsRoot.slice(2)}${block.receiptsRoot.slice(2)}`;
   }
-  return h;
-}
-*/
-
-function _hashHeader(block, prevHeader, genesis=false) {
-  if (genesis) { return sha3(0, 1, block.timestamp, block.transactionsRoot); }
-  else { return sha3(prevHeader, block.number, block.timestamp, block.transactionsRoot); }
+  else {
+    str = `0x${prevHeader.slice(2)}${ts}${n}${block.transactionsRoot.slice(2)}${block.receiptsRoot.slice(2)}`;
+  }
+  return sha3(str);
 }
 
-function _isPowTwo(n) {
+function isPowTwo(n) {
   n = Math.floor(n);
   if (n == 0) return false;
   while (n != 1) {
@@ -152,10 +112,13 @@ function _isPowTwo(n) {
     n = Math.floor(n / 2);
   }
   return true;
-
 }
 
+exports.hashHeader = hashHeader;
+exports.getLastPowTwo = getLastPowTwo;
+exports.getNextPowTwo = getNextPowTwo;
 exports.getHeader = getHeader;
 exports.getHeaders = getHeaders;
-// exports.getProof = getProof;
 exports.getRoot = getRoot;
+exports.forceMine = forceMine;
+exports.isPowTwo = isPowTwo;

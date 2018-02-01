@@ -3,7 +3,7 @@
 **WARNING:**
 This package is still in development. The contracts are in no way production ready.
 
-This repo implements the Trustless Relay contract. For more information on the Trustless Relay concept, see:
+This repo implements the Trustless Relay contract. For more information on the Trustless Relay concept, see: https://blog.gridplus.io/efficiently-bridging-evm-blockchains-8421504e9ced
 
 ## Setup
 
