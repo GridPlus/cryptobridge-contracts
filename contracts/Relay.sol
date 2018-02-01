@@ -130,14 +130,14 @@ contract Relay {
   function destake(uint256 amount) public {
     assert(stakers[msg.sender] != 0);
     assert(amount <= stakes[stakers[msg.sender]].amount);
-    stakeSum -= amount;
-    /*stakes[stakers[msg.sender]].amount -= amount;
+    //stakeSum -= amount;
+    stakes[stakers[msg.sender]].amount -= amount;
     stakeSum -= amount;
     EIP20 t = EIP20(stakeToken);
     t.transfer(msg.sender, amount);
     if (stakes[stakers[msg.sender]].amount == 0) {
       delete stakes[stakers[msg.sender]];
-    }*/
+    }
   }
 
   // Save a hash to an append-only array of rootHashes associated with the
@@ -425,8 +425,8 @@ contract Relay {
       uint8 v = uint8(BytesLib.toUint(sigs, i + 64));
       address valTmp = ecrecover(h, v, r, s);
       // Make sure this address is a staker and NOT the proposer
-      //assert(stakers[valTmp] > 0);
-      //assert(valTmp != getProposer());
+      assert(stakers[valTmp] > 0);
+      assert(valTmp != getProposer());
 
       bool noPass = false;
       // Unfortunately we need to loop through the cache to make sure there are
