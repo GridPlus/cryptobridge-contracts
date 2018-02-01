@@ -5,7 +5,7 @@ import './RLPEncode.sol';
 import "./BytesLib.sol";
 import "tokens/contracts/eip20/EIP20.sol";
 
-contract Relay {
+contract Bridge {
   //helpers
   function toBytes(address a) constant returns (bytes b) {
       assembly {
@@ -43,7 +43,7 @@ contract Relay {
     address indexed toToken);
 
 
-  // Admin has the ability to add tokens to the relay
+  // Admin has the ability to add tokens to the bridge
   address public admin;
 
   // The reward function, which is of form (reward = base + a*n)
@@ -87,13 +87,13 @@ contract Relay {
   mapping(address => Withdrawal) pendingWithdrawals;
 
   // The root of a Merkle tree made of consecutive block headers.
-  // These are indexed by the chainId of the Relay contract on the
+  // These are indexed by the chainId of the Bridge contract on the
   // sidechain. This also serves as the identity of the chain itself.
   // The associatin between address-id and chain-id is stored off-chain but it
   // must be 1:1 and unique.
   mapping(address => bytes32[]) roots;
 
-  // Tracking the last block for each relay network
+  // Tracking the last block for each bridge network
   mapping(address => uint256) lastBlock;
 
   // Tokens need to be associated between chains. For now, only the admin can
@@ -212,9 +212,9 @@ contract Relay {
   // ===========================================================================
 
   // Any user may make a deposit bound for a particular chainId (address of
-  // relay on the destination chain).
+  // bridge on the destination chain).
   // Only tokens for now, but ether may be allowed later.
-  function deposit(address token, address toChain, uint256 amount) public payable {
+  function deposit(address token, address toChain, uint256 amount) public {
     EIP20 t = EIP20(token);
     t.transferFrom(msg.sender, address(this), amount);
     Deposit(msg.sender, toChain, token, address(this), amount);
@@ -227,13 +227,13 @@ contract Relay {
   // of this process where the user proves the transaction root goes in the
   // block header.
   //
-  // addrs = [fromChain, depositToken, toChain, withdrawToken]
+  // addrs = [fromChain, depositToken, withdrawToken]
   //
   // netVersion is for EIP155 - v = netVersion*2 + 35 or netVersion*2 + 36
   // This can be found in a web3 console with web3.version.network. Parity
   // also serves it in the transaction log under `chainId`
   function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v,
-  bytes r, bytes s, address[4] addrs, uint256 amount, bytes32 txRoot, bytes path,
+  bytes r, bytes s, address[3] addrs, uint256 amount, bytes32 txRoot, bytes path,
   bytes parentNodes, bytes netVersion) public {
     //assert(tokens[addrs[0]][addrs[3]] == addrs[1]);
     // Form the transaction data.
@@ -247,7 +247,7 @@ contract Relay {
     //8340f549 function signature of "deposit(address,address,uint256)"
     rawTx[5] = BytesLib.concat(hex"8340f549",
       BytesLib.concat(encodeAddress(addrs[1]),
-      BytesLib.concat(encodeAddress(addrs[2]),
+      BytesLib.concat(encodeAddress(address(this)),
       toBytes(amount)
     )));
     rawTx[6] = v;
@@ -268,8 +268,7 @@ contract Relay {
     assert(msg.sender == ecrecover(keccak256(tx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s)));
 
     Withdrawal memory w;
-    w.withdrawToken = addrs[3];
-    assert(addrs[2] == address(this));
+    w.withdrawToken = addrs[2];
     w.fromChain = addrs[0];
     w.amount = amount;
     w.txRoot = txRoot;
@@ -294,7 +293,7 @@ contract Relay {
   // logs format (NOTE: this is falttened as input!):
   // [ [addrs[0], [ topics[0], topics[1], topics[2]], data[0] ],
   //   [addrs[1], [ topics[3], topics[4], topics[5], topics[6] ], data[1] ] ]
-  // where addrs = [token, relayB]
+  // where addrs = [token, bridgeB]
   // --------------------------------------------------------------------------
   // data[2] is the receiptsRoot for the block
   //function proveReceipt(bytes cumulativeGas, bytes logsBloom, address[2] addrs,
@@ -515,7 +514,7 @@ contract Relay {
   }
 
   // Staking token can only be set at instantiation!
-  function Relay(address token) {
+  function Bridge(address token) {
     admin = msg.sender;
     stakeToken = token;
   }
