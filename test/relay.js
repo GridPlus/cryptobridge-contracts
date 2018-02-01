@@ -18,7 +18,7 @@ const Relay = artifacts.require('./Relay');
 const EthereumTx = require('ethereumjs-tx');
 const EthUtil = require('ethereumjs-util');
 const BN = require('big-number');
-const MerkleTools = require('merkle-tools');
+const merkle = require('./util/merkle.js');
 const sync = require('./util/sync.js');
 
 // Need two of these
@@ -56,8 +56,9 @@ let headerRoot;
 let sigs = [];
 let gasPrice = 10 ** 9;
 let RootStorageIndex; // This is needed for the final withdrawal
-let lastHeader;
-let lastBlockNumber;
+let startingHeader;
+let startingBlockNumber;
+let treeHeaders;
 // Parameters that can be changed throughout the process
 let proposer;
 
@@ -116,8 +117,8 @@ contract('Relay', (accounts) => {
 
   before (async () => {
     const syncData = await sync.fsSync(web3B);
-    lastHeader = syncData[0];
-    lastBlockNumber = syncData[1];
+    startingHeader = syncData[0];
+    startingBlockNumber = syncData[1];
   });
 
   describe('Wallets', () => {
@@ -372,25 +373,18 @@ contract('Relay', (accounts) => {
       assert(blocks.isPowTwo(end - lastBlock) === true);
     });
 
-    it('Should sync to the current block in chain B', async () => {
-      console.log('lastBlockNumber', lastBlockNumber, 'lastHeader', lastHeader)
-      const currentBlock = await sync.syncChain(web3B, lastBlockNumber, lastHeader, lastBlockNumber, true);
-      console.log('currentBlock', currentBlock)
+    it('Should get tree headers', async () => {
+      const currentBlockNumber = await web3B.eth.getBlockNumber();
+      assert(currentBlockNumber > startingBlockNumber, 'Your chain is oversynced. Did you delete your "lastBlock" file?')
+      const allHeaders = await blocks.getHeaders(startingBlockNumber, currentBlockNumber, web3B, [startingHeader]);
+      treeHeaders = allHeaders.slice(allHeaders.length - (currentBlockNumber - lastBlock));
     });
 
-    /*it('Should form a Merkle tree from the last block headers, get signatures, and submit to chain A', async () => {
-      headers = await blocks.getHeaders(lastBlock + 1, end, web3B);
-      console.log('prevHeader', headers[depositBlock.number - (lastBlock + 2)])
-      console.log('forming depositHeader', blocks.hashHeader(depositBlock, headers[depositBlock.number - (lastBlock + 2)]))
-      depositHeader = headers[depositBlock.number - (lastBlock + 1)];
-      let moddedHeaders = [];
-      headers.forEach((header) => { moddedHeaders.push(header.slice(2)); })
-      tree = new MerkleTools();
-      tree.addLeaves(moddedHeaders);
-      console.log('tree headers:', moddedHeaders)
-      tree.makeTree()
-      headerRoot = '0x' + tree.getMerkleRoot().toString('hex');
-      assert(headerRoot != null);
+    it('Should form a Merkle tree from the last block headers, get signatures, and submit to chain A', async () => {
+      depositHeader = treeHeaders[depositBlock.number - (lastBlock + 1)];
+      tree = merkle.buildTree(treeHeaders);
+      assert(tree[tree.length - 1].length == 1, 'Merkle tree formatted incorrectly - no root.');
+      headerRoot = tree[tree.length - 1][0];
     });
 
     it('Should get signatures from stakers for proposed header root and check them', async () => {
@@ -424,10 +418,10 @@ contract('Relay', (accounts) => {
       const diffBounty = bountyStart - bountyEnd;
       assert(diffBounty === parseInt(reward));
       assert(parseInt(BN(proposerEnd).plus(gasCost).minus(proposerStart)) === parseInt(reward));
-    });*/
+    });
   })
 
-  /*describe('User: Withdraw tokens on chain A', () => {
+  describe('User: Withdraw tokens on chain A', () => {
 
     it('Should check that the deposit txParams hash was signed by wallets[2]', async () => {
       const unsignedDeposit = deposit;
@@ -511,46 +505,25 @@ contract('Relay', (accounts) => {
 
     it('Should submit the required data and make the withdrawal', async () => {
       let hI;
-      headers.forEach((header, i) => {
+      treeHeaders.forEach((header, i) => {
         if (header == depositHeader) { hI = i; }
       })
       // This should always be greater than zero since the prior two withdrawal
       // calls were made after the deposit
       assert(hI > 0);
-      const prevHeader = headers[hI - 1];
-
-      // Form and format the Merkle proof. This is a standard Merkle tree.
-      const proof = tree.getProof(hI, true);
-      const longProof = tree.getProof(hI);
-      const validateProof = tree.validateProof(longProof, Buffer.from(depositHeader.slice(2), 'hex'), tree.getMerkleRoot());
-      assert(validateProof === true);
-      // Format the proof data
-      let proofBytes = Buffer.from('');
-      proof.forEach((item) => {
-        proofBytes = Buffer.concat([proofBytes, item]);
-      })
-      const proofStr = '0x' + proofBytes.toString('hex');
-
-      //
-      //
-      // const testNumber = leftPad(parseInt(depositBlock.number).toString(16), 64, '0');
-      // const testTs = leftPad(parseInt(depositBlock.timestamp).toString(16), 64, '0');
-      // const testStr = `0x${prevHeader.slice(2)}${testTs}${testNumber}${depositBlock.transactionsRoot.slice(2)}${depositBlock.receiptsRoot.slice(2)}`;
-      // console.log('testStr', testStr);
-      // const testhash = sha3(testStr);
-      // console.log('testhash', testhash)
-      console.log('depositHeader', depositHeader)
-      console.log('merkleroot', tree.getMerkleRoot())
-      console.log('RootStorageIndex', RootStorageIndex)
-      console.log('proof', proof)
-      console.log('proof[1]', proof[1].toString('hex'))
-
+      const prevHeader = treeHeaders[hI - 1];
+      const proof = merkle.getProof(hI, tree);
+      const proofStr = merkle.getProofStr(proof);
+      // console.log('proofStr', proofStr);
+      const validProof = merkle.checkProof(depositHeader, proof, tree[tree.length - 1][0])
+      assert(validProof === true);
       const withdrawal = await relayA.withdraw(depositBlock.number,
          depositBlock.timestamp, prevHeader, RootStorageIndex, proofStr,
          { from: wallets[2][0], gas: 500000});
-      console.log('withdrawal', withdrawal)
+      assert(withdrawal.receipt.gasUsed < 500000);
+      console.log('Withdrawal gas usage: ', withdrawal.receipt.gasUsed);
     });
 
-  });*/
+  });
 
 });

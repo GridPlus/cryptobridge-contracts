@@ -24,7 +24,6 @@ function getHeaders(start, end, web3, headers=[], i=null, parentRes=null) {
     else { lastBlock = i - 1; }
     if (headers.length > 0) { lastHeader = headers[headers.length - 1]; }
 
-    console.log('i', i, 'end', end)
     if (!parentRes) { parentRes = resolve; }
     if (end <= start || !end) { return resolve([]); }
     if (i == end + 1) { return parentRes(headers); }
@@ -44,7 +43,6 @@ function getHeaders(start, end, web3, headers=[], i=null, parentRes=null) {
 // history to modify headers
 function getHeader(N, web3, lastHeader) {
   return new Promise((resolve, reject) => {
-    console.log('N', N, 'lastHeader', lastHeader)
     web3.eth.getBlock(N)
     .then((block) => {
       const header = hashHeader(block, lastHeader, N==0);
@@ -101,7 +99,6 @@ function hashHeader(block, prevHeader, genesis=false) {
     str = `0x${emptyHeader}${ts}${genesisN}${block.transactionsRoot.slice(2)}${block.receiptsRoot.slice(2)}`;
   }
   else {
-    console.log('prevHeader', prevHeader)
     str = `0x${prevHeader.slice(2)}${ts}${n}${block.transactionsRoot.slice(2)}${block.receiptsRoot.slice(2)}`;
   }
   return sha3(str);

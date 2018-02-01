@@ -14,15 +14,11 @@ function syncChain(web3, lastBlockNumber=null, lastHeader=null, w=false) {
     web3.eth.getBlockNumber()
     .then((n) => {
       targetBlock = n;
-      console.log('blockn', n)
-      console.log('lastHeader', lastHeader)
-      console.log('lastBlockNumber', lastBlockNumber)
       return blocks.getHeaders(lastBlockNumber, n, web3, [lastHeader])
     })
     .then((headers) => {
       const lastHeader = headers[headers.length - 1] || 0;
       if (w) { fs.writeFileSync(path, `${lastHeader},${targetBlock}`); }
-      console.log('returning ', lastHeader, targetBlock)
       return resolve([lastHeader, targetBlock]);
     })
     .catch((err) => { return reject(err); })
