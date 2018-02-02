@@ -6,7 +6,7 @@ This package in beta and should not be used in production systems with large amo
 
 This repo implements the Trustless Bridge contract. For more background on the Trustless Bridge/Relay concept, see [this article](https://blog.gridplus.io/efficiently-bridging-evm-blockchains-8421504e9ced).
 
-## Bridge Basics
+# Bridge Basics
 
 A bridge exists as two contracts (`Bridge.sol`) on two separate EVM-based blockchains. A set of participants may stake (`Bridge.stake()`) a specified token (`Bridge.stakeToken()`) to enter the pool of proposer candidates. Every time a piece of data is submitted to a bridge, a new proposer is chosen pseudorandomly (`Bridge.getProposer()`) with probability proportional to the participant's stake.
 
@@ -16,13 +16,15 @@ With data in hand, the proposer passes `root, chainAddr, startBlock, endBlock` t
 
 Once enough validators sign off (at least `Bridge.validatorThreshold()`), the proposer may submit the data to the bridge via `Bridge.proposeRoot()`. Assuming the signatures are correct, the proposer will be rewarded based on the current reward (`Bridge.reward()`). This is parameterized by `Bridge.updateReward()` and is a function of the number of blocks elapsed since the last root was checkpointed. This allows the proposer to wait until it is profitable to checkpoint the data (e.g. to wait out periods of high gas prices). Note that there is also a cutoff number of blocks, after which anyone may proposer a header with signatures and receive the reward. In future versions, this cutoff can be made into a random range to avoid proposers from waiting too long.
 
+# APIs
+
+The following is a set of APIs for the end user, stakers/proposer, and admin. If you would like to get started installing and testing this package, please skip to *Installation and Setup*
+
 ## User API
 
 Users may deposit tokens on the bridge contract in their blockchain and withdraw them from the corresponding bridge contract in the destination blockchain. Since the proposer only relays a single Merkle root hash, the user has to prove a few things from several pieces of data.
 
-### Deposits and Withdrawals
-
-#### deposit (token, toChain, amount)
+### deposit (token, toChain, amount)
 
 ```
 Function: deposit
@@ -33,13 +35,13 @@ Arguments:
   * amount (uint256: amount to deposit)
 ```
 
-##### Notes:
+#### Notes:
 
 * This is done on the "origin" chain by the user. The user must give an allowance to the bridge contract ahead of time.
 
 * NOTE: `Bridge.sol` v1 does not accept deposits or withdrawals of ether and is only compatable with ERC20 tokens. In future version, ether will be included as an allowable deposit or withdrawal token.
 
-#### prepWithdraw (nonce, gasPrice, gasLimit, v, r, s, addrs, amount, txRoot, path, parentNodes, netVersion)
+### prepWithdraw (nonce, gasPrice, gasLimit, v, r, s, addrs, amount, txRoot, path, parentNodes, netVersion)
 
 ```
 Function: prepWithdraw
@@ -59,13 +61,13 @@ Arguments:
   * netVersion (bytes: version of the origin chain, only needed if v is EIP155 form, can be called from web3.version.network)
 ```
 
-##### Notes:
+#### Notes:
 
 * EIP155 changed `v` from `27`/`28` to `netVersion * 2 + 35`/`netVersion * 2 + 36`. Bridge maintainers who publish data should indicate which version is being used. v1 of `Bridge.sol` supports both. Parity treats EIP155 as the official `v` value and labels the previous version as `standardV`.
 * `path` and `parentNodes` are produced by [eth-proof](https://github.com/zmitton/eth-proof). For more information, please see that library.
 * All bytes arguments are unpadded, e.g. 0x02 would represent the number 2 (with one byte).
 
-#### proveReceipt (logs, cumulativeGas, logsBloom, receiptsRoot, path, parentNodes)
+### proveReceipt (logs, cumulativeGas, logsBloom, receiptsRoot, path, parentNodes)
 
 ```
 Function: proveReceipt
@@ -79,7 +81,7 @@ Arguments:
   * parentNodes (bytes: concatenated list of parent nodes in the receipt Merkle-Patricia tree)
 ```
 
-##### Notes:
+#### Notes:
 * `logs` are encoded as a concatenated list of bytes:
 
   ```
@@ -88,7 +90,7 @@ Arguments:
 
   This is a fixed size because there are two events emitted: `Transfer` (ERC20) and `Deposit` (Bridge). `topics` correspond to the indexed log parameters in the order the appear in the contract's definition. `data` are the unindexed arguments. `addrs` correspond to the address of the contract that emitted the log (regardless of which blockchain it is deployed on). To see this encoding in action, see `encodeLogs()` in `test/util/receiptProof.js`. Note that the array returned by `encodeLogs()` must have each item encoded to hex and concatenated before sending the whole payload to `proveReceipt()`.    
 
-#### withdraw (blockNum, timestamp, prevHeader, rootN, proof)
+### withdraw (blockNum, timestamp, prevHeader, rootN, proof)
 
 ```
 Function: withdraw
@@ -101,7 +103,7 @@ Arguments:
   * proof (bytes: concatenated Merkle proof, see note below for formatting)
 ```
 
-##### Notes:
+#### Notes:
 
 * Headers in this system are modified and only contain the following data:
     - Previous [modified] header (`bytes32(0)` if this is the genesis block)
@@ -118,11 +120,8 @@ Arguments:
 
   Where `partnerIsRight_i = 0x01` for `true` and `0x00` for false. For more details on implementation, see `test/util/merkle.js`. Note that the original leaf is *not* included in this proof.
 
-### Constant functions
 
-A variety of constant functions provides relevant data needed for withdrawals.
-
-#### getTokenMapping (chain, token)
+### getTokenMapping (chain, token) constant
 
 ```
 Function: getTokenMapping
@@ -134,7 +133,7 @@ Returns:
   * address: the token you will receive as a withdrawal on this chain if you deposit your token on your chain
 ```
 
-#### getLastBlockNum (fromChain)
+### getLastBlockNum (fromChain) constant
 
 ```
 Function: getLastBlockNum
@@ -145,10 +144,148 @@ Returns:
   * uint256: last block on the origin chain that was relayed to this chain
 ```
 
+## Staker API
 
-## Setup
+Any participant may join a staking pool, but future versions may give the option to whitelist a set of participants.
 
-In order to run tests against the contract, you need to have truffle installed globally:
+### stake (amount)
+
+```
+Function: stake
+Purpose: Join a staking pool or add to your stake in the pre-determined stakeToken.
+Arguments:
+ * amount (uint256: atomic units of staking token to add to the pool. This will credit your account with more stake.
+```
+
+#### Notes:
+
+* In v1, once a participant has added stake, the proposer is subject to change, even for the current header root. This is to incentivize proposers to submit roots more quickly.
+
+### destake (amount)
+
+```
+Function: destake
+Purpose: Remove stake from a poo in the pre-determined stakeToken.
+Arguments:
+ * amount (uint256: atomic units of staking token to remove from the pool)
+```
+
+#### Notes:
+
+* As with staking, in v1 this potentially changes the current proposer's identity. If you are the proposer, it is something to be aware of.
+* In v1, there is currently no lock-up period, though one will likely be added in the future
+* If the participant destakes the total amount currently staked, he/she will be removed from the pool entirely.
+
+### proposeRoot (headerRoot, chainId, end, sigs)
+
+```
+Function: proposeRoot
+Purpose: May only be called by elected proposer, submit a headerRoot and validator signatures and receive a reward in return.
+Arguments:
+ * headerRoot (bytes32: the Merkle root of the modified block headers since the last block checkpointed. See withdraw() notes on block header formatting. Ordering in Merkle tree is based on block number)
+ * chainId (address: location of bridge contract on connected chain)
+ * end (uint256: last block number in the header Merkle tree corresponding to the root being submited)
+ * sigs (bytes: concatenated list of signatures of form 'r,s,v'. See notes on `prepWithdraw()` for instructions on formatting `v`)
+```
+
+#### Notes: 
+
+* The Merkle tree must begin with the block *after* the last block checkpoined in the previous Merkle root corresponding to this `chainId`. Although no explicit contract checks exist to ensure this range is a power of two, it is enforcced in the included test cases and is recommended.
+
+### getProposer () constant
+
+```
+Function: getProposer
+Purpose: Get the current proposer for all chains.
+```
+
+#### Notes:
+
+* In the future, stakers will be able to enroll in watching specific chains and only be elected to those chains. For simplicity, in v1 each proposer is proposer of all bridged chains at the same time and may only publish one at a time before a new proposer is selected. This is really designed to only relay one chain at a time.
+* The proposer is selected pseudorandomly based on the `epochSeed`, which is updated when a root is proposed.
+
+## Admin API
+
+Admin functionality is key to running a clean bridge. In v1, there is only one admin - the user who deploys the contract. In the future, this role can be delegated to the stakers or an elected representative.
+
+### Bridge (token)
+
+```
+Function: default function
+Purpose: Set admin and staking token
+Arguments:
+ * token (address: the staking token. Once set, this cannot be changed!)
+```
+
+### addToken (newToken, origToken, fromChain) onlyAdmin
+
+```
+Function: addToken
+Purpose: Create a token and move all units to this bridge contract, then associate to a token on an existing bridge.
+Arguments:
+ * newToken (address: token on this blockchain to map)
+ * origToken (address: token on fromChain to map)
+ * fromChain (address: bridge contract on the bridged blockchain)
+```
+
+#### Notes:
+
+* This function exists primarily to add trust to an admin's job of creating token mappings. It emits a separate event, so users can be sure the token was created correctly and all units were moved to the bridge contract (where the admin cannot withdraw them).
+* This function is meant for the destination chain (e.g. a sidechain), where an asset must be replicated and mapped to an existing asset (e.g. on the mainnet).
+
+### associateToken (newToken, origToken, toChain) onlyAdmin
+
+```
+Function: associateToken
+Purpose: Associate an existing token to a replicated token.
+Arguments:
+ * newToken (address: newly replicated token on bridged blockchain)
+ * origtoken (address: token on this blockchain to map)
+ * fromChain (address: bridge contract on blockchain housing the replicated token)
+```
+
+#### Notes:
+
+* This function complements `addToken`, which would be called on a sidechain. This function would be called on e.g. the mainnet. This exists because *both sides* of the bridge need to have the same token mapping (mirrored, of course).
+
+### updateValidatorThreshold (newThreshold) onlyAdmin
+
+```
+Function: updateValidatorThreshold
+Purpose: Change the number of validators required to propose a root
+Arguments:
+ * newThreshold (uint256: new number of validators needed to propose a root)
+```
+
+#### Notes:
+
+* This function may be deprecated after v0.1
+
+### updateReward (base, a, max) 
+
+```
+Function: updateReward
+Purpose: Change the reward issued to the proposer
+Arguments:
+ * base (uint256: minimum number of tokens rewarded for proposing a root)
+ * a (uint256: number of tokens per additional block in the range of the root tree)
+ * max (uint256: maximum number of tokens rewarded for proposing a root)
+```
+
+#### Notes:
+
+* Based on the slope of this reward curve (`a`), the maximum may be reached more quickly with a change.
+* Only the admin may call this function for now, but that may be changed in future versions
+
+# Installation and Setup
+
+## Installation
+
+This package is not yet installable via EthPM. When it is, you will be able to install it as a dependency automatically via truffle. For now, you will need to manually copy the files. Note that they will be consolidated in future versions.
+
+## Setup and Testing
+
+In order to run tests against the contract, you should clone this repo and have truffle installed globally:
 
 ```
 npm install -g truffle
@@ -189,3 +326,7 @@ In order to run the tests, you need to have two Ethereum clients running and spe
 truffle compile
 truffle test
 ```
+
+Further testing runs (with no contract changes) only require `truffle test`.
+
+Should you make any changes to the contract files, make sure you `rm -rf build` before running `truffle compile && truffle test`.
