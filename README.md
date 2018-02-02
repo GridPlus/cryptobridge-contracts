@@ -39,7 +39,7 @@ Arguments:
 
 * This is done on the "origin" chain by the user. The user must give an allowance to the bridge contract ahead of time.
 
-* NOTE: `Bridge.sol` v1 does not accept deposits or withdrawals of ether and is only compatable with ERC20 tokens. In future version, ether will be included as an allowable deposit or withdrawal token.
+* NOTE: `Bridge.sol` v0.1 does not accept deposits or withdrawals of ether and is only compatable with ERC20 tokens. In future version, ether will be included as an allowable deposit or withdrawal token.
 
 ### prepWithdraw (nonce, gasPrice, gasLimit, v, r, s, addrs, amount, txRoot, path, parentNodes, netVersion)
 
@@ -63,7 +63,7 @@ Arguments:
 
 #### Notes:
 
-* EIP155 changed `v` from `27`/`28` to `netVersion * 2 + 35`/`netVersion * 2 + 36`. Bridge maintainers who publish data should indicate which version is being used. v1 of `Bridge.sol` supports both. Parity treats EIP155 as the official `v` value and labels the previous version as `standardV`.
+* EIP155 changed `v` from `27`/`28` to `netVersion * 2 + 35`/`netVersion * 2 + 36`. Bridge maintainers who publish data should indicate which version is being used. v0.1 of `Bridge.sol` supports both. Parity treats EIP155 as the official `v` value and labels the previous version as `standardV`.
 * `path` and `parentNodes` are produced by [eth-proof](https://github.com/zmitton/eth-proof). For more information, please see that library.
 * All bytes arguments are unpadded, e.g. 0x02 would represent the number 2 (with one byte).
 
@@ -159,7 +159,7 @@ Arguments:
 
 #### Notes:
 
-* In v1, once a participant has added stake, the proposer is subject to change, even for the current header root. This is to incentivize proposers to submit roots more quickly.
+* In v0.1, once a participant has added stake, the proposer is subject to change, even for the current header root. This is to incentivize proposers to submit roots more quickly.
 
 ### destake (amount)
 
@@ -172,8 +172,8 @@ Arguments:
 
 #### Notes:
 
-* As with staking, in v1 this potentially changes the current proposer's identity. If you are the proposer, it is something to be aware of.
-* In v1, there is currently no lock-up period, though one will likely be added in the future
+* As with staking, in v0.1 this potentially changes the current proposer's identity. If you are the proposer, it is something to be aware of.
+* In v0.1, there is currently no lock-up period, though one will likely be added in the future
 * If the participant destakes the total amount currently staked, he/she will be removed from the pool entirely.
 
 ### proposeRoot (headerRoot, chainId, end, sigs)
@@ -188,7 +188,7 @@ Arguments:
  * sigs (bytes: concatenated list of signatures of form 'r,s,v'. See notes on `prepWithdraw()` for instructions on formatting `v`)
 ```
 
-#### Notes: 
+#### Notes:
 
 * The Merkle tree must begin with the block *after* the last block checkpoined in the previous Merkle root corresponding to this `chainId`. Although no explicit contract checks exist to ensure this range is a power of two, it is enforcced in the included test cases and is recommended.
 
@@ -201,12 +201,12 @@ Purpose: Get the current proposer for all chains.
 
 #### Notes:
 
-* In the future, stakers will be able to enroll in watching specific chains and only be elected to those chains. For simplicity, in v1 each proposer is proposer of all bridged chains at the same time and may only publish one at a time before a new proposer is selected. This is really designed to only relay one chain at a time.
+* In the future, stakers will be able to enroll in watching specific chains and only be elected to those chains. For simplicity, in v0.1 each proposer is proposer of all bridged chains at the same time and may only publish one at a time before a new proposer is selected. This is really designed to only relay one chain at a time.
 * The proposer is selected pseudorandomly based on the `epochSeed`, which is updated when a root is proposed.
 
 ## Admin API
 
-Admin functionality is key to running a clean bridge. In v1, there is only one admin - the user who deploys the contract. In the future, this role can be delegated to the stakers or an elected representative.
+Admin functionality is key to running a clean bridge. In v0.1, there is only one admin - the user who deploys the contract. In the future, this role can be delegated to the stakers or an elected representative.
 
 ### Bridge (token)
 
@@ -261,7 +261,7 @@ Arguments:
 
 * This function may be deprecated after v0.1
 
-### updateReward (base, a, max) 
+### updateReward (base, a, max)
 
 ```
 Function: updateReward
