@@ -19,25 +19,30 @@ Once enough validators sign off (at least `Bridge.validatorThreshold()`), the pr
 
 Users may deposit tokens on the bridge contract in their blockchain and withdraw them from the corresponding bridge contract in the destination blockchain. Since the proposer only relays a single Merkle root hash, the user has to prove a few things from several pieces of data.
 
+### Deposits and Withdrawals
 
-### deposit (token, toChain, amount)
+#### deposit (token, toChain, amount)
 
 ```
 Function: deposit
+Purpose: Deposit tokens so that they can be withdrawn on another chain.
 Arguments:
   * token (address: the address of the token being deposited)
   * toChain (address: the address of the corresponding bridged blockchain, i.e where the coins will be withdrawn)
   * amount (uint256: amount to deposit)
 ```
 
-This is done on the "origin" chain by the user. The user must give an allowance to the bridge contract ahead of time.
+##### Notes:
 
-*NOTE: `Bridge.sol` v1 does not accept deposits or withdrawals of ether and is only compatable with ERC20 tokens. In future version, ether will be included as an allowable deposit or withdrawal token.*
+* This is done on the "origin" chain by the user. The user must give an allowance to the bridge contract ahead of time.
 
-### prepWithdraw (nonce, gasPrice, gasLimit, v, r, s, addrs, amount, txRoot, path, parentNodes, netVersion)
+* NOTE: `Bridge.sol` v1 does not accept deposits or withdrawals of ether and is only compatable with ERC20 tokens. In future version, ether will be included as an allowable deposit or withdrawal token.
+
+#### prepWithdraw (nonce, gasPrice, gasLimit, v, r, s, addrs, amount, txRoot, path, parentNodes, netVersion)
 
 ```
 Function: prepWithdraw
+Purpose: Step 1 of withdrawal. Initialize a withdrawal and prove a transaction. Save the transaction root and other data.
 Arguments:
   * nonce (bytes: account nonce of user in origin chain used in deposit transaction, hex formatted integer)
   * gasPrice (bytes: price of gas used in deposit transaction, hex integer)
@@ -49,13 +54,96 @@ Arguments:
   * amount (bytes: amount deposited in origin chain, hex integer, atomic units)
   * txRoot (bytes32: transactionsRoot from block in which the deposit was made on the origin chain)
   * path (bytes: path of deposit transaction in the transactions Merkle-Patricia tree)
-  * parentNodes (bytes: concatenated list of parent nodes in the Merkle-Patricia tree)
+  * parentNodes (bytes: concatenated list of parent nodes in the transaction Merkle-Patricia tree)
   * netVersion (bytes: version of the origin chain, only needed if v is EIP155 form, can be called from web3.version.network)
 ```
 
-*NOTE: EIP155 changed `v` from `27`/`28` to `netVersion * 2 + 35`/`netVersion * 2 + 36`. Bridge maintainers who publish data should indicate which version is being used. v1 of `Bridge.sol` supports both. Parity treats EIP155 as the official `v` value and labels the previous version as `standardV`.
-*NOTE: `path` and `parentNodes` are produced by [eth-proof](https://github.com/zmitton/eth-proof). For more information, please see that library.
-*NOTE: All bytes arguments are unpadded, e.g. 0x02 would represent the number 2 (with one byte)*
+##### Notes:
+
+* EIP155 changed `v` from `27`/`28` to `netVersion * 2 + 35`/`netVersion * 2 + 36`. Bridge maintainers who publish data should indicate which version is being used. v1 of `Bridge.sol` supports both. Parity treats EIP155 as the official `v` value and labels the previous version as `standardV`.
+* `path` and `parentNodes` are produced by [eth-proof](https://github.com/zmitton/eth-proof). For more information, please see that library.
+* All bytes arguments are unpadded, e.g. 0x02 would represent the number 2 (with one byte).
+
+#### proveReceipt (logs, cumulativeGas, logsBloom, receiptsRoot, path, parentNodes)
+
+```
+Function: proveReceipt
+Purpose: Step 2 of withdrawal. Prove a receipt and save the receipts root to an existing pending withdrawal.
+Arguments:
+  * logs (bytes: encoded logs, see below)
+  * cumulativeGas (bytes: amount of gas used after this transaction completed in the block, hex integer)
+  * logsBloom (bytes: raw data from deposit transaction receipt)
+  * receiptsRoot (bytes32: root of the receipts in the deposit's block)
+  * path (bytes: path of the receipt in the receipt Merkle-Patricia tree)
+  * parentNodes (bytes: concatenated list of parent nodes in the receipt Merkle-Patricia tree)
+```
+
+##### Notes:
+* `logs` are encoded as a concatenated list of bytes:
+
+  ```
+  [ [addrs[0], [ topics[0], topics[1], topics[2]], data[0] ], [addrs[1], [ topics[3], topics[4], topics[5], topics[6] ], data[1] ] ]
+  ```
+
+  This is a fixed size because there are two events emitted: `Transfer` (ERC20) and `Deposit` (Bridge). `topics` correspond to the indexed log parameters in the order the appear in the contract's definition. `data` are the unindexed arguments. `addrs` correspond to the address of the contract that emitted the log (regardless of which blockchain it is deployed on). To see this encoding in action, see `encodeLogs()` in `test/util/receiptProof.js`. Note that the array returned by `encodeLogs()` must have each item encoded to hex and concatenated before sending the whole payload to `proveReceipt()`.    
+
+#### withdraw (blockNum, timestamp, prevHeader, rootN, proof)
+
+```
+Function: withdraw
+Purpose: Step 3 of withdrawal. Prove block header and receive tokens.
+Arguments:
+  * blockNum (uint256: block number the block containing the deposit on the bridged blockchain)
+  * timestamp (uint256: timestamp on the block containing the deposit on the bridged blockchain)
+  * prevHeader (bytes32: the previous modified block header (NOT Ethereum block header), see note below for formatting)
+  * rootN (uint256: index of the header root corresponding to the origin chain)
+  * proof (bytes: concatenated Merkle proof, see note below for formatting)
+```
+
+##### Notes:
+
+* Headers in this system are modified and only contain the following data:
+    - Previous [modified] header (`bytes32(0)` if this is the genesis block)
+    - Timestamp (from block)
+    - Block number
+    - Transactions root
+    - Receipts root
+
+* A normal Merkle proof is used for headers rather than a Merkle-Patricia tree. It is formatted as:
+
+  ```
+  partnerIsRight_i, partner_i], ...
+  ```
+
+  Where `partnerIsRight_i = 0x01` for `true` and `0x00` for false. For more details on implementation, see `test/util/merkle.js`. Note that the original leaf is *not* included in this proof.
+
+### Constant functions
+
+A variety of constant functions provides relevant data needed for withdrawals.
+
+#### getTokenMapping (chain, token)
+
+```
+Function: getTokenMapping
+Purpose: Get the token associated with your token from another chain. This will be your withdrawal token if you deposit the other one.
+Arguments:
+  * chain (address: the bridge contract on the origin chain where you would deposit your tokens)
+  * token (address: the token you would deposit)
+Returns:
+  * address: the token you will receive as a withdrawal on this chain if you deposit your token on your chain
+```
+
+#### getLastBlockNum (address fromChain)
+
+```
+Function: getLastBlockNum
+Purpose: Find the most recent block on the given chain that has been included in a proposed header root. If you have a deposit in a block less than or equal to this one on the provided chain, you may begin the withdrawal process.
+Arguments:
+  * fromChain (address: the bridge contract on the origin chain)
+Returns:
+  * uint256: last block on the origin chain that was relayed to this chain
+```
+
 
 ## Setup
 

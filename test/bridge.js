@@ -218,12 +218,11 @@ contract('Bridge', (accounts) => {
       assert(parseInt(currentStake) === amount);
     });
 
-    // it('Should destake a small amount from wallets[4]', async () => {
-    //
-    //   await BridgeA.destake(1, { from: wallets[4][0] });
-    //   const stakeSumTmp = await BridgeA.stakeSum();
-    //   assert(parseInt(stakeSumTmp) === 111);
-    // })
+    it('Should destake a small amount from wallets[4]', async () => {
+      await BridgeA.destake(1, { from: wallets[4][0] });
+      const stakeSumTmp = await BridgeA.stakeSum();
+      assert(parseInt(stakeSumTmp) === 111);
+    })
 
     it('Should get the proposer and make sure it is a staker', async () => {
       const seed = await BridgeA.epochSeed();
