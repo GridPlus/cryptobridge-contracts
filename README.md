@@ -1,3 +1,4 @@
+![Bridge](https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/360_Bridge_at_night%2C_2008.jpg/800px-360_Bridge_at_night%2C_2008.jpg)
 # Trustless Bridge
 
 **WARNING:**
@@ -133,7 +134,7 @@ Returns:
   * address: the token you will receive as a withdrawal on this chain if you deposit your token on your chain
 ```
 
-#### getLastBlockNum (address fromChain)
+#### getLastBlockNum (fromChain)
 
 ```
 Function: getLastBlockNum
