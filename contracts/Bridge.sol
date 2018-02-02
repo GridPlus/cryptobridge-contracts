@@ -201,7 +201,7 @@ contract Bridge {
   // The admin can update the reward at any time.
   // TODO: We may want to block this during the current epoch, which would require
   // we keep a "reward cache" of some kind.
-  function updateReward(uint256 base, uint256 a, uint256 max) public {
+  function updateReward(uint256 base, uint256 a, uint256 max) public onlyAdmin() {
     reward.base = base;
     reward.a = a;
     maxReward = max;
