@@ -331,3 +331,17 @@ truffle test
 Further testing runs (with no contract changes) only require `truffle test`.
 
 Should you make any changes to the contract files, make sure you `rm -rf build` before running `truffle compile && truffle test`.
+
+## Sending Tokens
+
+A convenience script is included to allow you to send tokens to a recipient once your `secrets.json` file is set up. If you'd like to see which options you may use, run:
+
+```
+node scripts/sendTokens.js --help
+```
+
+Here is an example using the default network (`localhost:7545`):
+
+```
+node scripts/sendTokens.js --token 0x87a464eb78986993a16bbeff76e1e3f0cd181060 --to 0xd1aa9d98da70774190b6a80fbead38b1e4e07928 --number 100
+```

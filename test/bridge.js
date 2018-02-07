@@ -132,12 +132,14 @@ contract('Bridge', (accounts) => {
   describe('Admin: Bridge setup', () => {
     it('Should create a token on chain A and give it out to accounts 1-3', async () => {
       stakingToken = await Token.new(1000, 'Staking', 0, 'STK', { from: accounts[0] });
+      console.log('Staking token A: ', stakingToken.address);
       // Need to stake from wallets rather than accounts since validators sigs
       // will come from wallets.
       // For some reason the wallet indexing doesn't seem to match up to the
       // account indexing (the first wallet is different, but also the ordering
       // of subsequent ones seems different)
       // wallets[1] == accounts[0]
+      await stakingToken.transfer(wallets[1][0], 100);
       await stakingToken.transfer(wallets[2][0], 100);
       await stakingToken.transfer(wallets[3][0], 100);
       await stakingToken.transfer(wallets[4][0], 100);
@@ -147,6 +149,7 @@ contract('Bridge', (accounts) => {
       BridgeA = await Bridge.new(stakingToken.address, { from: accounts[0] });
       const admin = await BridgeA.admin();
       assert(admin == accounts[0]);
+      console.log(`Bridge on ${_providerA}: ${BridgeA.address}`)
     });
 
     // NOTE: Even though I'm getting values of 3 for checkSignatures, it's still
@@ -180,8 +183,10 @@ contract('Bridge', (accounts) => {
       await stakingToken.approve(BridgeA.address, amount, { from: user });
       await BridgeA.stake(amount, { from: user });
       const stakeSumTmp = await BridgeA.stakeSum();
+      console.log('stakeSumTmp', parseInt(stakeSumTmp), 'amount', amount);
       assert(parseInt(stakeSumTmp) === amount);
       const currentStake = await BridgeA.getStake(user);
+      console.log('currentStake', currentStake)
       assert(parseInt(currentStake) === amount);
     })
 
@@ -250,6 +255,7 @@ contract('Bridge', (accounts) => {
       BridgeB = await new web3B.eth.Contract(BridgeABI, txReceipt.contractAddress);
       assert(txReceipt.contractAddress === BridgeB.options.address);
       BridgeB.setProvider(providerB);
+      console.log(`Bridge on ${_providerB}: ${BridgeB.options.address}`)
     });
   });
 

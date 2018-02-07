@@ -1,0 +1,17 @@
+{
+  "package_name": "trustless-bridge",
+  "version": "0.1.0",
+  "description": "Connect assets on any two EVM chains with a bridge.",
+  "authors": [
+    "Alex Miller <alex@gridplus.io>"
+  ],
+  "keywords": [
+    "ethereum",
+    "bridge",
+    "evm"
+  ],
+  "dependencies": {
+    "tokens": "^1.0.0"
+  },
+  "license": "MIT"
+}
