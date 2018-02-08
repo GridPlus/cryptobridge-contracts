@@ -70,7 +70,7 @@ contract Bridge {
   mapping(address => uint256) stakers;
   Stake[] stakes;
   uint256 public stakeSum;
-  address stakeToken;
+  address public stakeToken;
   uint256 public validatorThreshold = 0;
 
   // Pending withdrawals. The user prepares a withdrawal with tx data and then

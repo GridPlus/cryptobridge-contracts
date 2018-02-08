@@ -131,7 +131,7 @@ contract('Bridge', (accounts) => {
 
   describe('Admin: Bridge setup', () => {
     it('Should create a token on chain A and give it out to accounts 1-3', async () => {
-      stakingToken = await Token.new(1000, 'Staking', 0, 'STK', { from: accounts[0] });
+      stakingToken = await Token.new(1000000000000, 'Staking', 0, 'STK', { from: accounts[0] });
       console.log('Staking token A: ', stakingToken.address);
       // Need to stake from wallets rather than accounts since validators sigs
       // will come from wallets.

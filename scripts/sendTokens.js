@@ -44,17 +44,27 @@ if (argv.accounts) {
   wallets.forEach((w, i) => { console.log(`[${i}]\t${w[0]}`)})
 } else {
   if (!argv.to) { console.log('You must specify who to send to (--to)'); }
-  if (!argv.token) { console.log('You must specify a token to send (--token)')}
   if (!argv.from) { argv.from = wallets[1][0]; }
-  const n = argv.number | 1;
-  const data = `0xa9059cbb${leftPad(argv.to.slice(2), 64, '0')}${leftPad(n.toString(16), 64, '0')}`;
-  web3.eth.sendTransaction({ to: argv.token, from: argv.from, data: data, gas: 100000 }, (err, res) => {
+  const n = argv.number ? argv.number : 1;
+  const gas = 100000;
+  let tx = {
+    from: argv.from,
+    gas
+  }
+  if (!argv.token) {
+    tx.value = parseInt(n);
+    tx.to = argv.to;
+  } else {
+    tx.data = `0xa9059cbb${leftPad(argv.to.slice(2), 64, '0')}${leftPad(n.toString(16), 64, '0')}`;
+    tx.to = argv.token;
+  }
+  web3.eth.sendTransaction(tx, (err, res) => {
     if (err) { console.log('Error sending token: ', err); }
     else {
       web3.eth.getTransactionReceipt(res, (err, receipt) => {
         if (err) { console.log(`Error getting transaction receipt: ${err}`); }
-        else if (receipt.logs.length < 1) { console.log('Error sending transaction. Are you sure you have enough tokens to send?'); }
-        else { console.log(`${n} tokens (${argv.token}) successfully sent to ${argv.to}`)}
+        else if (argv.token && receipt.logs.length < 1) { console.log('Error sending transaction. Are you sure you have enough tokens to send?'); }
+        else { console.log(`${n} tokens (${argv.token ? argv.token : 'ether'}) successfully sent to ${argv.to}`)}
       })
     }
   })
