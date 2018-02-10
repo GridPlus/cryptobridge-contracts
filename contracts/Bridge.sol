@@ -60,7 +60,7 @@ contract Bridge {
 
   // The randomness seed of the epoch. This is used to determine the proposer
   // and the validator pool
-  bytes32 public epochSeed = block.blockhash(block.number-1);
+  bytes32 public epochSeed = keccak256(block.difficulty + block.number + now);
 
   // Global pool of stakers - indexed by address leading to stake size
   struct Stake {
@@ -142,10 +142,12 @@ contract Bridge {
 
   // Save a hash to an append-only array of rootHashes associated with the
   // given origin chain address-id.
+  // TODO: This can be turned into a loop so the proposer can submit roots
+  // from multiple bridged chains. The reward will be increased with more roots.
   function proposeRoot(bytes32 headerRoot, address chainId, uint256 end, bytes sigs)
   public {
     // Make sure we are adding blocks
-    assert(end > lastBlock[chainId]);
+    assert(end > lastBlock[chainId] + 1);
     // Make sure enough validators sign off on the proposed header root
     assert(checkSignatures(headerRoot, chainId, lastBlock[chainId] + 1, end, sigs) >= validatorThreshold);
     // Add the header root
@@ -159,7 +161,7 @@ contract Bridge {
       assert(msg.sender == getProposer());
     }
     msg.sender.transfer(r);
-    epochSeed = block.blockhash(block.number);
+    epochSeed = keccak256(block.difficulty + block.number + now);
     RootStorage(chainId, lastBlock[chainId] + 1, end, headerRoot, roots[chainId].length - 1, msg.sender);
     lastBlock[chainId] = end;
   }
@@ -412,8 +414,8 @@ contract Bridge {
   // signatures (>= validatorThreshold), return true
   // NOTE: For the first version, any staker will work. For the future, we should
   // select a subset of validators from the staker pool.
-  function checkSignatures(bytes32 root, address chain, uint256 start, uint256 end,
-  bytes sigs) public constant returns (uint256) {
+  function checkSignatures(bytes32 root, address chain, uint256 start, uint256 end, bytes sigs)
+  public constant returns (uint256) {
     bytes32 h = keccak256(root, chain, start, end);
     uint256 passed;
     address[] memory passing = new address[](sigs.length / 96);
@@ -423,18 +425,17 @@ contract Bridge {
       bytes32 s = BytesLib.toBytes32(BytesLib.slice(sigs, i + 32, 32));
       uint8 v = uint8(BytesLib.toUint(sigs, i + 64));
       address valTmp = ecrecover(h, v, r, s);
-      // Make sure this address is a staker and NOT the proposer
-      assert(stakers[valTmp] > 0);
-      assert(valTmp != getProposer());
-
       bool noPass = false;
       // Unfortunately we need to loop through the cache to make sure there are
       // no signature duplicates. This is the most efficient way to do it since
       // storage costs too much.s
-      for (uint64 j = 0; j < i / 96; j += 1) {
-        if (passing[j] == valTmp) { noPass = true; }
+      // Make sure this address is a staker and NOT the proposer
+      if (stakes[stakers[valTmp]].amount > 0 && valTmp != getProposer()) {
+        for (uint64 j = 0; j < i / 96; j += 1) {
+          if (passing[j] == valTmp) { noPass = true; }
+        }
       }
-      if (noPass == false && valTmp != getProposer() && stakers[valTmp] > 0) {
+      if (noPass == false) {
         passing[(i / 96)] = valTmp;
         passed ++;
       }
@@ -455,8 +456,7 @@ contract Bridge {
   }
 
   // Sample a proposer. Likelihood of being chosen is proportional to stake size.
-  // NOTE: This is just a first pass. This will bias earlier stakers
-  // and should be fixed to be made more fair
+  // NOTE: This current design assumes
   function getProposer() public constant returns (address) {
     // Convert the seed to an index
     uint256 target = uint256(epochSeed) % stakeSum;
