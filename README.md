@@ -1,11 +1,11 @@
-# Trustless Bridge Contracts
+# Cryptobridge Contracts
 
 **WARNING:**
 This package is functional, but is unaudited and in still in development. It should not be used in production systems with large amounts of value.
 
-![Bridge](https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/360_Bridge_at_night%2C_2008.jpg/800px-360_Bridge_at_night%2C_2008.jpg)
+This repo implements the trustless EVM bridge (now termed "cryptobridge") contract. For more background on the concept, see [this article](https://blog.gridplus.io/efficiently-bridging-evm-blockchains-8421504e9ced). The bridges are maintained by networks of participants running the [cryptobridge client](https://github.com/GridPlus/cryptobridge-client).
 
-This repo implements the Trustless Bridge contract. For more background on the Trustless Bridge/Relay concept, see [this article](https://blog.gridplus.io/efficiently-bridging-evm-blockchains-8421504e9ced).
+![Bridge](https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/360_Bridge_at_night%2C_2008.jpg/800px-360_Bridge_at_night%2C_2008.jpg)
 
 # Bridge Basics
 
