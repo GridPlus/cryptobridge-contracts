@@ -7,7 +7,8 @@ const ethWallet = require('ethereumjs-wallet');
 const fs = require('fs');
 const jsonfile = require('jsonfile');
 const spawn = require('child_process').spawn;
-const Spectcl = require('spectcl');
+const execFile = require('child_process').execFile;
+const exec  = require('child_process').exec;
 
 // The password that will be used for accounts (these are temporary accounts on
 // private chains)
@@ -58,24 +59,19 @@ Promise.map(ports, (_port, i) => {
     });
     jsonfile.writeFile(`${PATH}/config.json`, tmpConfig, { spaces: 2 }, () => {
 
-      // Create a signer for the chain
-      const session = new Spectcl();
-      const cmd = `parity account new --chain ${PATH}/config.json --keys-path ${PATH}/keys`;
-      session.spawn(cmd)
-      session.expect([
-        'Type password:', function(match, matched, outer_cb){
-          session.send(`${password}\n`);
-          session.expect([
-            'Repeat password:', function(match, matched, inner_cb){
-              session.send(`${password}\n`);
-              inner_cb()
-            }], function(err){
-              outer_cb()
-            }
-          )
+      // ------------------------------------------------------------
+      // https://github.com/GridPlus/cryptobridge-contracts/issues/13
+      let pwfile = `${DATA_DIR}/../pw`
+
+      exec(`parity account new --chain ${PATH}/config.json --keys-path ${PATH}/keys --password ${pwfile}`, (err, stdout, stderr) => {
+        if (err) {
+          console.error(`exec error: ${err}`);
+          return;
         }
-      ], function(err){
-        if (err) { throw err; }
+        console.log(`${chainName} Account:  ${stdout}`);
+      });
+      // -------------------------------------------------------------
+
         // NOTE: I had to add a timeout because there was a race condition.
         // 300ms seems to work but if you're getting errors try increasing it.
         setTimeout(() => {
@@ -130,7 +126,7 @@ Promise.map(ports, (_port, i) => {
             })
           });
         }, 500)
-      })
+      
     });
   })
 })
