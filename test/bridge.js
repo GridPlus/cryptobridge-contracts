@@ -474,9 +474,9 @@ contract('Bridge', (accounts) => {
     })
 
     it('Should check the pending withdrawal fields', async () => {
-      const pendingToken = await BridgeA.getPendingToken(accounts[1]);
+      const pendingToken = await BridgeA.getPendingToken(accounts[2]);
       assert(pendingToken.toLowerCase() == tokenA.address.toLowerCase());
-      const pendingFromChain = await BridgeA.getPendingFromChain(accounts[1]);
+      const pendingFromChain = await BridgeA.getPendingFromChain(accounts[2]);
       assert(pendingFromChain.toLowerCase() == BridgeB.options.address.toLowerCase());
     })
 
