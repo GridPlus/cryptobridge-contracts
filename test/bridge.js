@@ -72,7 +72,7 @@ function ensureByte(s) {
 contract('Bridge', (accounts) => {
   assert(accounts.length > 0);
   function isEVMException(err) {
-    return err.toString().includes('VM Exception');
+    return err.toString().includes('VM Exception') || err.toString().includes('StatusError');
   }
 
   function generateFirstWallets(n, _wallets, hdPathIndex) {
@@ -132,7 +132,7 @@ contract('Bridge', (accounts) => {
   describe('Admin: Bridge setup', () => {
     it('Should create a token on chain A and give it out to accounts 1-3', async () => {
       stakingToken = await Token.new(1000, 'Staking', 0, 'STK', { from: accounts[0] });
-      console.log('Staking token A: ', stakinToken.address);
+      console.log('Staking token A: ', stakingToken.address);
       // Need to stake from wallets rather than accounts since validators sigs
       // will come from wallets.
       // For some reason the wallet indexing doesn't seem to match up to the
