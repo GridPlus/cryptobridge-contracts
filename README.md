@@ -280,40 +280,27 @@ Arguments:
 
 # Installation and Setup
 
-## Installation
+## EthPM
 
-This package is not yet installable via EthPM. When it is, you will be able to install it as a dependency automatically via truffle. For now, you will need to manually copy the files. Note that they will be consolidated in future versions.
+This package is not yet installable via EthPM.
 
 ## Setup and Testing
 
-In order to run tests against the contract, you should clone this repo and have truffle installed globally:
+In order to run tests against the contract, execute the following commands, which should be
+self-explaining
 
-```
+```sh
+git clone https://github.com/GridPlus/cryptobridge-contracts.git
+cd cry*ts
+npm install
+cp secretsTEMPLATE.json secrets.json
 npm install -g truffle
-```
-
-You also need to include a `secrets.json` in this directory of form:
-
-```
-{
-  "mnemonic": "public okay smoke segment forum front animal extra appear online before various cook test arrow",
-  "hdPath": "m/44'/60'/0'/0/"
-}
-```
-
-Finally, you need to install the `tokens` package:
-
-```
 truffle install tokens
 ```
 
-## Booting Parity Networks
+## Starting Test Networks
 
-Unfortunately, TestRPC/Ganache are incompatible with these tests because they do not provide `v`, `r`, `s` signature parameters for transactions. I have
-submitted an [issue](https://github.com/trufflesuite/ganache/issues/294) but in the meantime we can use parity. I have included a convenience script to
-boot multiple parity instances with one command. All instances will have instant sealing. Unfortunately, this will be a lot slower than using TestRPC/Ganache, but it should still work.
-
-In order to run the tests, start parity with:
+The convenience script `parity/boot.js` boots multiple parity instances with one command. All instances will have instant sealing. Unfortunately, this will be a lot slower than using TestRPC/Ganache (1).
 
 ```
 npm run parity 7545 8545
@@ -321,7 +308,7 @@ npm run parity 7545 8545
 
 ## Testing
 
-In order to run the tests, you need to have two Ethereum clients running and specified in `truffle.js` (default on ports `7545` and `8545`).
+Start the tests via truffle (which launches `truffle.js` first, then `test/bridge.js`)
 
 ```
 truffle compile
@@ -330,7 +317,7 @@ truffle test
 
 Further testing runs (with no contract changes) only require `truffle test`.
 
-Should you make any changes to the contract files, make sure you `rm -rf build` before running `truffle compile && truffle test`.
+For the case you ran into problems, cleanup the build directory with `rm -rf build` (or `rmdir /S /Q build`) before running `truffle compile && truffle test`.
 
 ## Sending Tokens
 
@@ -345,3 +332,7 @@ Here is an example using the default network (`localhost:7545`):
 ```
 node scripts/sendTokens.js --token 0x87a464eb78986993a16bbeff76e1e3f0cd181060 --to 0xd1aa9d98da70774190b6a80fbead38b1e4e07928 --number 100
 ```
+
+## (1) TestRPC/Ganache
+
+Unfortunately TestRPC/Ganache are incompatible with these tests because they do not provide `v`, `r`, `s` signature parameters for transactions (see [issue](https://github.com/trufflesuite/ganache/issues/294)).
