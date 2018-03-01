@@ -62,6 +62,15 @@ let treeHeaders;
 // Parameters that can be changed throughout the process
 let proposer;
 
+function posize(params, param, name) {
+  pos = params.length();
+  params += param.toString();
+  newpos = params.length;
+  size = newpos - pos;
+  console.log(name+': '+ pos + '/'+size + ' - ');
+}
+
+
 // left-pad half-bytes
 function ensureByte(s) {
   if (s.substr(0, 2) == '0x') { s = s.slice(2); }
@@ -453,10 +462,20 @@ contract('Bridge', (accounts) => {
 
       // Make sure we are RLP encoding the transaction correctly. `encoded` corresponds
       // to what Solidity calculates.
-      const encodedTest = rlp.encode([nonce, gasPrice, gas, BridgeB.options.address,
-        '', deposit.input, deposit.v, deposit.r, deposit.s]).toString('hex');
-      const encodedValue = rlp.encode(proof.value).toString('hex');
-      assert(encodedTest == encodedValue, 'Tx RLP encoding incorrect');
+      const rlpDepositTxHex = rlp.encode([
+        nonce, 
+        gasPrice, 
+        gas, 
+        BridgeB.options.address,
+        '', 
+        deposit.input, 
+        deposit.v, 
+        deposit.r, 
+        deposit.s
+      ]).toString('hex');
+
+      const rlpDepositTxProof = rlp.encode(proof.value).toString('hex');
+      assert(rlpDepositTxHex == rlpDepositTxProof, 'Tx RLP encoding incorrect');
 
       // Check the proof in JS first
       const checkpoint = txProof.verify(proof, 4);
@@ -465,18 +484,45 @@ contract('Bridge', (accounts) => {
       // Get the network version
       const version = parseInt(deposit.chainId);
 
+      const rlpDepositTxData = rlp.encode(proof.value);
+      const rlpWithdrawTxData = rlp.encode([
+        nonce, 
+        gasPrice, 
+        gas, 
+        BridgeB.options.address,
+        '', 
+        deposit.input, 
+        version, 
+        "", 
+        ""
+      ]);      
+        
       // Make the transaction
-      const prepWithdraw = await BridgeA.prepWithdraw(nonce, gasPrice, gas, deposit.v, deposit.r, deposit.s,
-        [BridgeB.options.address, tokenB.options.address, tokenA.address], 5,
-        depositBlock.transactionsRoot, path, parentNodes, version, { from: wallets[2][0], gas: 500000 });
+      const prepWithdraw = await BridgeA.prepWithdraw(
+        deposit.v, 
+        deposit.r, 
+        deposit.s,
+        [BridgeB.options.address, tokenB.options.address, tokenA.address], 
+        5,
+        depositBlock.transactionsRoot, 
+        path, 
+        parentNodes, 
+        version,
+        //LAZ: passing as 'hex' results in ascii beeing received in contract
+        rlpDepositTxData.toString('binary'),
+        rlpWithdrawTxData.toString('binary'),
+        { from: wallets[2][0], gas: 500000 }
+      );
+
       console.log('prepWithdraw gas usage:', prepWithdraw.receipt.gasUsed);
       assert(prepWithdraw.receipt.gasUsed < 500000);
     })
 
+    //LAZ: use wallets[2][0] instead of accounts[2], see problems described above 
     it('Should check the pending withdrawal fields', async () => {
-      const pendingToken = await BridgeA.getPendingToken(accounts[2]);
+      const pendingToken = await BridgeA.getPendingToken( wallets[2][0] );
       assert(pendingToken.toLowerCase() == tokenA.address.toLowerCase());
-      const pendingFromChain = await BridgeA.getPendingFromChain(accounts[2]);
+      const pendingFromChain = await BridgeA.getPendingFromChain( wallets[2][0] );
       assert(pendingFromChain.toLowerCase() == BridgeB.options.address.toLowerCase());
     })
 
@@ -502,9 +548,17 @@ contract('Bridge', (accounts) => {
       logsCat += `${data[0].toString('hex')}${addrs[1].toString('hex')}${topics[1][0].toString('hex')}`
       logsCat += `${topics[1][1].toString('hex')}${topics[1][2].toString('hex')}`
       logsCat += `${topics[1][3].toString('hex')}${data[1].toString('hex')}`;
-      const proveReceipt = await BridgeA.proveReceipt(logsCat, depositReceipt.cumulativeGasUsed,
-        depositReceipt.logsBloom, depositBlock.receiptsRoot, path, parentNodes,
-        { from: wallets[2][0], gas: 500000 })
+
+      const proveReceipt = await BridgeA.proveReceipt(
+        logsCat,
+        depositReceipt.cumulativeGasUsed,
+        depositReceipt.logsBloom,
+        depositBlock.receiptsRoot,
+        path,
+        parentNodes,
+        { from: wallets[2][0], gas: 500000 }
+      )
+
       console.log('proveReceipt gas usage:', proveReceipt.receipt.gasUsed);
     });
 
@@ -522,9 +576,16 @@ contract('Bridge', (accounts) => {
       // console.log('proofStr', proofStr);
       const validProof = merkle.checkProof(depositHeader, proof, tree[tree.length - 1][0])
       assert(validProof === true);
-      const withdrawal = await BridgeA.withdraw(depositBlock.number,
-         depositBlock.timestamp, prevHeader, RootStorageIndex, proofStr,
-         { from: wallets[2][0], gas: 500000});
+      const withdrawal = await BridgeA.withdraw(
+        depositBlock.number,
+        depositBlock.timestamp, 
+        prevHeader, 
+        RootStorageIndex, 
+        proofStr,
+         { from: wallets[2][0], gas: 500000}
+      );
+
+
       assert(withdrawal.receipt.gasUsed < 500000);
       console.log('Withdrawal gas usage: ', withdrawal.receipt.gasUsed);
     });

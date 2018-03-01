@@ -13,14 +13,14 @@ module.exports = {
       host: 'localhost',
       port: 7545,
       network_id: '*', // Match any network id
-      gas: 10000000
+      gas: 20000000    // https://github.com/trufflesuite/truffle/issues/825#issuecomment-369189238
     },
     developmentB: {
       name: "devB",
       host: 'localhost',
       port: 8545,
       network_id: '*',
-      gas: 10000000
+      gas: 20000000
     },
     /*ropsten: {
       provider: new HDWalletProvider(secrets.mnemonic, 'https://ropsten.infura.io/'),

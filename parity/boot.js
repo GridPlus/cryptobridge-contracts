@@ -113,6 +113,9 @@ Promise.map(ports, (_port, i) => {
               args.push('--password');
               args.push(pwfile);
 
+              // https://github.com/GridPlus/cryptobridge-contracts/issues/15
+              // args.push('--no-ipc'); 
+
               const parity = spawn('parity', args, { stdio: 'pipe', cwd: PATH });
               parity.stdout.pipe(access);
               parity.stderr.pipe(error);
