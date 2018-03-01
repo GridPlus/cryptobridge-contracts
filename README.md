@@ -42,25 +42,47 @@ Arguments:
 
 * NOTE: `Bridge.sol` v0.1 does not accept deposits or withdrawals of ether and is only compatable with ERC20 tokens. In future version, ether will be included as an allowable deposit or withdrawal token.
 
-### prepWithdraw (nonce, gasPrice, gasLimit, v, r, s, addrs, amount, txRoot, path, parentNodes, netVersion)
+### prepWithdraw ( v, [r, s, txRoot], addrs, amount, path, parentNodes, netVersion, rlpDepositTxData, rlpWithdrawTxData)
 
 ```
 Function: prepWithdraw
 Purpose: Step 1 of withdrawal. Initialize a withdrawal and prove a transaction. Save the transaction root and other data.
 Arguments:
-  * nonce (bytes: account nonce of user in origin chain used in deposit transaction, hex formatted integer)
-  * gasPrice (bytes: price of gas used in deposit transaction, hex integer)
-  * gasLimit (bytes: maximum gas used in deposit transaction, hex integer)
   * v (bytes: value of v received from transaction receipt in origin chain, see note below)
-  * r (bytes: value of r from the deposit transaction)
-  * s (bytes: value of s from the deposit transaction)
+  * [r, s, txRoot] (1)
   * addrs (address[3]: [fromChain, depositToken, withdrawToken]. fromChain = address of origin chain bridge contract, depositToken = address of token deposited in the origin chain, withdrawToken = address of mapped token in this chain)
   * amount (bytes: amount deposited in origin chain, hex integer, atomic units)
-  * txRoot (bytes32: transactionsRoot from block in which the deposit was made on the origin chain)
   * path (bytes: path of deposit transaction in the transactions Merkle-Patricia tree)
   * parentNodes (bytes: concatenated list of parent nodes in the transaction Merkle-Patricia tree)
-  * netVersion (bytes: version of the origin chain, only needed if v is EIP155 form, can be called from web3.version.network)
+  * netVersion (bytes: version of the origin chain, only needed if v is EIP155 form, can be called from web3.version.network)   
+  * rlpDepositTxData (rlp binary encoded Deposit transaction data)
+  * rlpWithdrawTxData (rlp binary encoded Withdraw transaction data)
 ```
+
+(1) [r, s, txRoot]
+  * r  (bytes32: value of r from the deposit transaction)
+  * s  (bytes32: value of s from the deposit transaction)
+  * txRoot (bytes32: transactionsRoot from block in which the deposit was made on the origin chain)
+
+JavaScript code Example
+
+```js
+      // Make the transaction
+      const prepWithdraw = await BridgeA.prepWithdraw(
+        deposit.v, 
+        [deposit.r, deposit.s, depositBlock.transactionsRoot],
+        [BridgeB.options.address, tokenB.options.address, tokenA.address], 
+        5,
+        path, 
+        parentNodes, 
+        version,
+        rlpDepositTxData.toString('binary'),
+        rlpWithdrawTxData.toString('binary'),
+        { from: wallets[2][0], gas: 500000 }
+      );
+```
+
+For more details on how to setup the transaction, see `test/bridge.js`.
 
 #### Notes:
 
@@ -286,8 +308,7 @@ This package is not yet installable via EthPM.
 
 ## Setup and Testing
 
-In order to run tests against the contract, execute the following commands, which should be
-self-explaining
+In order to run tests against the contract, execute the following commands, which should be self-explaining
 
 ```sh
 git clone https://github.com/GridPlus/cryptobridge-contracts.git
