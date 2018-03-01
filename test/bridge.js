@@ -500,11 +500,9 @@ contract('Bridge', (accounts) => {
       // Make the transaction
       const prepWithdraw = await BridgeA.prepWithdraw(
         deposit.v, 
-        deposit.r, 
-        deposit.s,
+        [deposit.r, deposit.s, depositBlock.transactionsRoot],
         [BridgeB.options.address, tokenB.options.address, tokenA.address], 
         5,
-        depositBlock.transactionsRoot, 
         path, 
         parentNodes, 
         version,
@@ -548,7 +546,7 @@ contract('Bridge', (accounts) => {
       logsCat += `${data[0].toString('hex')}${addrs[1].toString('hex')}${topics[1][0].toString('hex')}`
       logsCat += `${topics[1][1].toString('hex')}${topics[1][2].toString('hex')}`
       logsCat += `${topics[1][3].toString('hex')}${data[1].toString('hex')}`;
-
+     
       const proveReceipt = await BridgeA.proveReceipt(
         logsCat,
         depositReceipt.cumulativeGasUsed,
@@ -573,7 +571,6 @@ contract('Bridge', (accounts) => {
       const prevHeader = treeHeaders[hI - 1];
       const proof = merkle.getProof(hI, tree);
       const proofStr = merkle.getProofStr(proof);
-      // console.log('proofStr', proofStr);
       const validProof = merkle.checkProof(depositHeader, proof, tree[tree.length - 1][0])
       assert(validProof === true);
       const withdrawal = await BridgeA.withdraw(

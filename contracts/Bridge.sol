@@ -25,11 +25,11 @@ contract Bridge {
     return BytesLib.concat(new bytes(12) , toBytes(a));
   }
 
-event DataStored(bytes indexed _data, bytes data);
-
-    function storeBytes(bytes data) public {
-        DataStored(data, data);
-}
+  // Use to simulate kind of console.log() for debugging
+  event DataStored(bytes indexed _data, bytes data);
+  function storeBytes(bytes data) public {
+    DataStored(data, data);
+  }
   // ===========================================================================
   // GLOBAL VARIABLES
   // ===========================================================================
@@ -227,6 +227,10 @@ event DataStored(bytes indexed _data, bytes data);
     Deposit(msg.sender, toChain, token, address(this), amount);
   }
 
+  // --------------------------------------------------------------------------
+  // Witddraw 
+  // --------------------------------------------------------------------------
+
   function getStandardV(bytes v, uint256 netVersion) internal constant returns (uint8) {
     if (netVersion > 0) {
       return uint8(BytesLib.toUint(BytesLib.leftPad(v), 0) - (netVersion * 2) - 8);
@@ -234,10 +238,6 @@ event DataStored(bytes indexed _data, bytes data);
       return uint8(BytesLib.toUint(BytesLib.leftPad(v), 0));
     }
   }
-
-  // --------------------------------------------------------------------------
-  // Witddraw 
-  // --------------------------------------------------------------------------
 
   // The user who wishes to make a withdrawal sets the transaction here.
   // This must correspond to `deposit()` on the fromChain
@@ -253,39 +253,42 @@ event DataStored(bytes indexed _data, bytes data);
 
   function prepWithdraw(
     bytes v,
-    bytes r, 
-    bytes s, 
+    bytes32[3] b32p, // r=0, s=1, txRoot=2
+    //bytes32 r, 
+    //bytes32 s, 
     address[3] addrs, 
     uint256 amount, 
-    bytes32 txRoot, 
+    //bytes32 txRoot, 
     bytes path,
     bytes parentNodes, 
-    bytes netVersion
-    ,bytes rlpDepositTx
-    ,bytes rlpWithdrawTx
+    bytes netVersion,
+    bytes rlpDepositTx,
+    bytes rlpWithdrawTx
     )
     public 
     {
 
-    //LAZ: further reduction of parameters: find method to fetch values directly
-    //     from the rlp-bytes.   
+    // LAZ:
+    // further reduction of parameters: find method to fetch values directly
+    // from the rlp-bytes. Reduction of this function is possible, but it cannot
+    // be merged with proveReceipt, see comments there.   
 
     //assert(tokens[addrs[0]][addrs[3]] == addrs[1]);
     // Form the transaction data.
 
     // Make sure this transaction is the value on the path via a MerklePatricia proof
-    assert(MerklePatriciaProof.verify(rlpDepositTx, path, parentNodes, txRoot) == true);
+    assert(MerklePatriciaProof.verify(rlpDepositTx, path, parentNodes, b32p[2]) == true);
 
     // Ensure v,r,s belong to msg.sender
     // We want standardV as either 27 or 28
     uint8 standardV = getStandardV(v, BytesLib.toUint(BytesLib.leftPad(netVersion), 0));
-    assert(msg.sender == ecrecover(keccak256(rlpWithdrawTx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s)));
+    assert(msg.sender == ecrecover(keccak256(rlpWithdrawTx), standardV, b32p[0], b32p[1]));
 
     Withdrawal memory w;
     w.withdrawToken = addrs[2];
     w.fromChain = addrs[0];
     w.amount = amount;
-    w.txRoot = txRoot;
+    w.txRoot = b32p[2];
     w.txHash = keccak256(rlpWithdrawTx);
     pendingWithdrawals[msg.sender] = w;
   }
@@ -316,6 +319,16 @@ event DataStored(bytes indexed _data, bytes data);
     )
     public
     {
+    // LAZ:
+    // even one(!) more parameter leads to "CompilerError: Stack too deep, 
+    // try removing local variables.". Applying Packing/Slicing has its 
+    // limits, as it has stack-cost, too (and needs sometimes local vars,
+    // as it does below).
+    // Suggestion (essentially a must): 
+    // Overall rewrite of proveReceipt, to use other techniques/concepts,
+    // thus stack-cost is reduced significantly. After this, at minimum
+    // one of the 2 other functions (prep / withdraw) will be mergable.
+
     // Make sure the user has a pending withdrawal
     //assert(pendingWithdrawals[msg.sender].txRoot != bytes32(0));
 
@@ -386,22 +399,37 @@ event DataStored(bytes indexed _data, bytes data);
       path, parentNodes, receiptsRoot) == true);
     pendingWithdrawals[msg.sender].receiptsRoot = receiptsRoot;
 
-    //LAZ draft for inclusion of final withdraw function call  
+    // LAZ:
+    // draft for inclusion of final withdraw function call  
+    // Part 3 of withdrawal. At this point, the user has proven transaction and
+    // receipt. Now the user needs to prove the header.
+    
+    // Those lines cannot be merged, as they depend on parameters 
     //Withdrawal memory w = pendingWithdrawals[msg.sender];
     //bytes32 leaf = keccak256(prevHeader, timestamp, blockNum, w.txRoot, w.receiptsRoot);
     //assert(merkleProof(leaf, roots[w.fromChain][rootN], proof) == true);
 
-    //LAZ: enable those 4 lines first, then check the neccesity of the above
+    // Those lines could be enabled (this results in around 370k gas, but without
+    // the prooves above)
     //EIP20 t = EIP20(pendingWithdrawals[msg.sender].withdrawToken);
     //t.transfer(msg.sender, pendingWithdrawals[msg.sender].amount);
     //Withdraw(msg.sender, pendingWithdrawals[msg.sender].fromChain, pendingWithdrawals[msg.sender].withdrawToken, pendingWithdrawals[msg.sender].amount);
     //delete pendingWithdrawals[msg.sender];
 }
 
+// --------------------------------------------------------------------------
+
   // Part 3 of withdrawal. At this point, the user has proven transaction and
   // receipt. Now the user needs to prove the header.
-  function withdraw(uint256 blockNum, uint256 timestamp, bytes32 prevHeader,
-  uint rootN, bytes proof) public {
+  function withdraw(
+    uint256 blockNum, 
+    uint256 timestamp, 
+    bytes32 prevHeader,
+    uint rootN, 
+    bytes proof
+  ) 
+  public 
+  {
     Withdrawal memory w = pendingWithdrawals[msg.sender];
     bytes32 leaf = keccak256(prevHeader, timestamp, blockNum, w.txRoot, w.receiptsRoot);
     assert(merkleProof(leaf, roots[w.fromChain][rootN], proof) == true);
@@ -412,7 +440,7 @@ event DataStored(bytes indexed _data, bytes data);
   }
 
 // --------------------------------------------------------------------------
-// END Witddraw 
+// END WITHDRAW
 // --------------------------------------------------------------------------
 
   function getPendingToken(address user) public constant returns (address) {
