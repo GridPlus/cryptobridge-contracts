@@ -42,25 +42,47 @@ Arguments:
 
 * NOTE: `Bridge.sol` v0.1 does not accept deposits or withdrawals of ether and is only compatable with ERC20 tokens. In future version, ether will be included as an allowable deposit or withdrawal token.
 
-### prepWithdraw (nonce, gasPrice, gasLimit, v, r, s, addrs, amount, txRoot, path, parentNodes, netVersion)
+### prepWithdraw ( v, [r, s, txRoot], addrs, amount, path, parentNodes, netVersion, rlpDepositTxData, rlpWithdrawTxData)
 
 ```
 Function: prepWithdraw
 Purpose: Step 1 of withdrawal. Initialize a withdrawal and prove a transaction. Save the transaction root and other data.
 Arguments:
-  * nonce (bytes: account nonce of user in origin chain used in deposit transaction, hex formatted integer)
-  * gasPrice (bytes: price of gas used in deposit transaction, hex integer)
-  * gasLimit (bytes: maximum gas used in deposit transaction, hex integer)
   * v (bytes: value of v received from transaction receipt in origin chain, see note below)
-  * r (bytes: value of r from the deposit transaction)
-  * s (bytes: value of s from the deposit transaction)
+  * [r, s, txRoot] (1)
   * addrs (address[3]: [fromChain, depositToken, withdrawToken]. fromChain = address of origin chain bridge contract, depositToken = address of token deposited in the origin chain, withdrawToken = address of mapped token in this chain)
   * amount (bytes: amount deposited in origin chain, hex integer, atomic units)
-  * txRoot (bytes32: transactionsRoot from block in which the deposit was made on the origin chain)
   * path (bytes: path of deposit transaction in the transactions Merkle-Patricia tree)
   * parentNodes (bytes: concatenated list of parent nodes in the transaction Merkle-Patricia tree)
-  * netVersion (bytes: version of the origin chain, only needed if v is EIP155 form, can be called from web3.version.network)
+  * netVersion (bytes: version of the origin chain, only needed if v is EIP155 form, can be called from web3.version.network)   
+  * rlpDepositTxData (rlp binary encoded Deposit transaction data)
+  * rlpWithdrawTxData (rlp binary encoded Withdraw transaction data)
 ```
+
+(1) [r, s, txRoot]
+  * r  (bytes32: value of r from the deposit transaction)
+  * s  (bytes32: value of s from the deposit transaction)
+  * txRoot (bytes32: transactionsRoot from block in which the deposit was made on the origin chain)
+
+JavaScript code Example
+
+```js
+      // Make the transaction
+      const prepWithdraw = await BridgeA.prepWithdraw(
+        deposit.v, 
+        [deposit.r, deposit.s, depositBlock.transactionsRoot],
+        [BridgeB.options.address, tokenB.options.address, tokenA.address], 
+        5,
+        path, 
+        parentNodes, 
+        version,
+        rlpDepositTxData.toString('binary'),
+        rlpWithdrawTxData.toString('binary'),
+        { from: wallets[2][0], gas: 500000 }
+      );
+```
+
+For more details on how to setup the transaction, see `test/bridge.js`.
 
 #### Notes:
 
@@ -280,40 +302,28 @@ Arguments:
 
 # Installation and Setup
 
-## Installation
+## EthPM
 
-This package is not yet installable via EthPM. When it is, you will be able to install it as a dependency automatically via truffle. For now, you will need to manually copy the files. Note that they will be consolidated in future versions.
+This package is not yet installable via EthPM.
 
 ## Setup and Testing
 
-In order to run tests against the contract, you should clone this repo and have truffle installed globally:
+In order to run tests against the contract, execute the following commands, which should be self-explaining
 
-```
+```sh
+git clone https://github.com/GridPlus/cryptobridge-contracts.git
+cd cry*ts
+npm install
+cp secretsTEMPLATE.json secrets.json
 npm install -g truffle
-```
-
-You also need to include a `secrets.json` in this directory of form:
-
-```
-{
-  "mnemonic": "public okay smoke segment forum front animal extra appear online before various cook test arrow",
-  "hdPath": "m/44'/60'/0'/0/"
-}
-```
-
-Finally, you need to install the `tokens` package:
-
-```
 truffle install tokens
 ```
 
-## Booting Parity Networks
+Important: If you are a network participant, then you have to replace the seed-phrase within secrets.json with your own unique seed-phrase. For a simple isolated test-run, secrets.json can remain as it is.
 
-Unfortunately, TestRPC/Ganache are incompatible with these tests because they do not provide `v`, `r`, `s` signature parameters for transactions. I have
-submitted an [issue](https://github.com/trufflesuite/ganache/issues/294) but in the meantime we can use parity. I have included a convenience script to
-boot multiple parity instances with one command. All instances will have instant sealing. Unfortunately, this will be a lot slower than using TestRPC/Ganache, but it should still work.
+## Starting Test Networks
 
-In order to run the tests, start parity with:
+The convenience script `parity/boot.js` boots multiple parity instances with one command. All instances will have instant sealing. Unfortunately, this will be a lot slower than using TestRPC/Ganache (1).
 
 ```
 npm run parity 7545 8545
@@ -321,7 +331,7 @@ npm run parity 7545 8545
 
 ## Testing
 
-In order to run the tests, you need to have two Ethereum clients running and specified in `truffle.js` (default on ports `7545` and `8545`).
+Start the tests via truffle (which launches `truffle.js` first, then `test/bridge.js`)
 
 ```
 truffle compile
@@ -330,7 +340,7 @@ truffle test
 
 Further testing runs (with no contract changes) only require `truffle test`.
 
-Should you make any changes to the contract files, make sure you `rm -rf build` before running `truffle compile && truffle test`.
+For the case you ran into problems, cleanup the build directory with `rm -rf build` (or `rmdir /S /Q build`) before running `truffle compile && truffle test`.
 
 ## Sending Tokens
 
@@ -345,3 +355,7 @@ Here is an example using the default network (`localhost:7545`):
 ```
 node scripts/sendTokens.js --token 0x87a464eb78986993a16bbeff76e1e3f0cd181060 --to 0xd1aa9d98da70774190b6a80fbead38b1e4e07928 --number 100
 ```
+
+## (1) TestRPC/Ganache
+
+Unfortunately TestRPC/Ganache are incompatible with these tests because they do not provide `v`, `r`, `s` signature parameters for transactions (see [issue](https://github.com/trufflesuite/ganache/issues/294)).

@@ -222,6 +222,17 @@ contract Bridge {
     Deposit(msg.sender, toChain, token, address(this), amount);
   }
 
+  // --------------------------------------------------------------------------
+  // Witddraw 
+  // --------------------------------------------------------------------------
+
+  function getStandardV(bytes v, uint256 netVersion) internal constant returns (uint8) {
+    if (netVersion > 0) {
+      return uint8(BytesLib.toUint(BytesLib.leftPad(v), 0) - (netVersion * 2) - 8);
+    } else {
+      return uint8(BytesLib.toUint(BytesLib.leftPad(v), 0));
+    }
+  }
 
   // The user who wishes to make a withdrawal sets the transaction here.
   // This must correspond to `deposit()` on the fromChain
@@ -234,57 +245,50 @@ contract Bridge {
   // netVersion is for EIP155 - v = netVersion*2 + 35 or netVersion*2 + 36
   // This can be found in a web3 console with web3.version.network. Parity
   // also serves it in the transaction log under `chainId`
-  function prepWithdraw(bytes nonce, bytes gasPrice, bytes gasLimit, bytes v,
-  bytes r, bytes s, address[3] addrs, uint256 amount, bytes32 txRoot, bytes path,
-  bytes parentNodes, bytes netVersion) public {
+
+  function prepWithdraw(
+    bytes v,
+    bytes32[3] b32p, // r=0, s=1, txRoot=2
+    //bytes32 r, 
+    //bytes32 s, 
+    address[3] addrs, 
+    uint256 amount, 
+    //bytes32 txRoot, 
+    bytes path,
+    bytes parentNodes, 
+    bytes netVersion,
+    bytes rlpDepositTx,
+    bytes rlpWithdrawTx
+    )
+    public 
+    {
+
+    // LAZ:
+    // further reduction of parameters: find method to fetch values directly
+    // from the rlp-bytes. Reduction of this function is possible, but it cannot
+    // be merged with proveReceipt, see comments there.   
+
     //assert(tokens[addrs[0]][addrs[3]] == addrs[1]);
     // Form the transaction data.
-    bytes[] memory rawTx = new bytes[](9);
-    rawTx[0] = nonce;
-    rawTx[1] = gasPrice;
-    rawTx[2] = gasLimit;
-    rawTx[3] = toBytes(addrs[0]);
-    // Leave msg.value blank. This means only token-token transfers for now.
-    rawTx[4] = hex"";
-    //8340f549 function signature of "deposit(address,address,uint256)"
-    rawTx[5] = BytesLib.concat(hex"8340f549",
-      BytesLib.concat(encodeAddress(addrs[1]),
-      BytesLib.concat(encodeAddress(address(this)),
-      toBytes(amount)
-    )));
-    rawTx[6] = v;
-    rawTx[7] = r;
-    rawTx[8] = s;
-    bytes memory tx = RLPEncode.encodeList(rawTx);
 
     // Make sure this transaction is the value on the path via a MerklePatricia proof
-    assert(MerklePatriciaProof.verify(tx, path, parentNodes, txRoot) == true);
+    assert(MerklePatriciaProof.verify(rlpDepositTx, path, parentNodes, b32p[2]) == true);
 
     // Ensure v,r,s belong to msg.sender
     // We want standardV as either 27 or 28
     uint8 standardV = getStandardV(v, BytesLib.toUint(BytesLib.leftPad(netVersion), 0));
-    rawTx[6] = netVersion;
-    rawTx[7] = hex"";
-    rawTx[8] = hex"";
-    tx = RLPEncode.encodeList(rawTx);
-    assert(msg.sender == ecrecover(keccak256(tx), standardV, BytesLib.toBytes32(r), BytesLib.toBytes32(s)));
+    assert(msg.sender == ecrecover(keccak256(rlpWithdrawTx), standardV, b32p[0], b32p[1]));
 
     Withdrawal memory w;
     w.withdrawToken = addrs[2];
     w.fromChain = addrs[0];
     w.amount = amount;
-    w.txRoot = txRoot;
-    w.txHash = keccak256(tx);
+    w.txRoot = b32p[2];
+    w.txHash = keccak256(rlpWithdrawTx);
     pendingWithdrawals[msg.sender] = w;
   }
 
-  function getStandardV(bytes v, uint256 netVersion) internal constant returns (uint8) {
-    if (netVersion > 0) {
-      return uint8(BytesLib.toUint(BytesLib.leftPad(v), 0) - (netVersion * 2) - 8);
-    } else {
-      return uint8(BytesLib.toUint(BytesLib.leftPad(v), 0));
-    }
-  }
+// --------------------------------------------------------------------------
 
   // Prove the receipt included in the tx forms the receipt root for the block
   // If the proof works, save the receipt root
@@ -300,8 +304,26 @@ contract Bridge {
   // data[2] is the receiptsRoot for the block
   //function proveReceipt(bytes cumulativeGas, bytes logsBloom, address[2] addrs,
   //bytes32[3] data, bytes32[7] topics, bytes path, bytes parentNodes)
-  function proveReceipt(bytes logs, bytes cumulativeGas, bytes logsBloom,
-  bytes32 receiptsRoot, bytes path, bytes parentNodes) public {
+  function proveReceipt(
+    bytes logs, 
+    bytes cumulativeGas, 
+    bytes logsBloom,
+    bytes32 receiptsRoot, 
+    bytes path, 
+    bytes parentNodes
+    )
+    public
+    {
+    // LAZ:
+    // even one(!) more parameter leads to "CompilerError: Stack too deep, 
+    // try removing local variables.". Applying Packing/Slicing has its 
+    // limits, as it has stack-cost, too (and needs sometimes local vars,
+    // as it does below).
+    // Suggestion (essentially a must): 
+    // Overall rewrite of proveReceipt, to use other techniques/concepts,
+    // thus stack-cost is reduced significantly. After this, at minimum
+    // one of the 2 other functions (prep / withdraw) will be mergable.
+
     // Make sure the user has a pending withdrawal
     //assert(pendingWithdrawals[msg.sender].txRoot != bytes32(0));
 
@@ -371,12 +393,38 @@ contract Bridge {
     assert(MerklePatriciaProof.verify(RLPEncode.encodeListWithPasses(receipt, passes),
       path, parentNodes, receiptsRoot) == true);
     pendingWithdrawals[msg.sender].receiptsRoot = receiptsRoot;
-  }
+
+    // LAZ:
+    // draft for inclusion of final withdraw function call  
+    // Part 3 of withdrawal. At this point, the user has proven transaction and
+    // receipt. Now the user needs to prove the header.
+    
+    // Those lines cannot be merged, as they depend on parameters 
+    //Withdrawal memory w = pendingWithdrawals[msg.sender];
+    //bytes32 leaf = keccak256(prevHeader, timestamp, blockNum, w.txRoot, w.receiptsRoot);
+    //assert(merkleProof(leaf, roots[w.fromChain][rootN], proof) == true);
+
+    // Those lines could be enabled (this results in around 370k gas, but without
+    // the prooves above)
+    //EIP20 t = EIP20(pendingWithdrawals[msg.sender].withdrawToken);
+    //t.transfer(msg.sender, pendingWithdrawals[msg.sender].amount);
+    //Withdraw(msg.sender, pendingWithdrawals[msg.sender].fromChain, pendingWithdrawals[msg.sender].withdrawToken, pendingWithdrawals[msg.sender].amount);
+    //delete pendingWithdrawals[msg.sender];
+}
+
+// --------------------------------------------------------------------------
 
   // Part 3 of withdrawal. At this point, the user has proven transaction and
   // receipt. Now the user needs to prove the header.
-  function withdraw(uint256 blockNum, uint256 timestamp, bytes32 prevHeader,
-  uint rootN, bytes proof) public {
+  function withdraw(
+    uint256 blockNum, 
+    uint256 timestamp, 
+    bytes32 prevHeader,
+    uint rootN, 
+    bytes proof
+  ) 
+  public 
+  {
     Withdrawal memory w = pendingWithdrawals[msg.sender];
     bytes32 leaf = keccak256(prevHeader, timestamp, blockNum, w.txRoot, w.receiptsRoot);
     assert(merkleProof(leaf, roots[w.fromChain][rootN], proof) == true);
@@ -385,6 +433,10 @@ contract Bridge {
     Withdraw(msg.sender, w.fromChain, w.withdrawToken, w.amount);
     delete pendingWithdrawals[msg.sender];
   }
+
+// --------------------------------------------------------------------------
+// END WITHDRAW
+// --------------------------------------------------------------------------
 
   function getPendingToken(address user) public constant returns (address) {
     return pendingWithdrawals[user].withdrawToken;
