@@ -319,6 +319,8 @@ npm install -g truffle
 truffle install tokens
 ```
 
+Important: If you are a network participant, then you have to replace the seed-phrase within secrets.json with your own unique seed-phrase. For a simple isolated test-run, secrets.json can remain as it is.
+
 ## Starting Test Networks
 
 The convenience script `parity/boot.js` boots multiple parity instances with one command. All instances will have instant sealing. Unfortunately, this will be a lot slower than using TestRPC/Ganache (1).

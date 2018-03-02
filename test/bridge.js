@@ -62,15 +62,6 @@ let treeHeaders;
 // Parameters that can be changed throughout the process
 let proposer;
 
-function posize(params, param, name) {
-  pos = params.length();
-  params += param.toString();
-  newpos = params.length;
-  size = newpos - pos;
-  console.log(name+': '+ pos + '/'+size + ' - ');
-}
-
-
 // left-pad half-bytes
 function ensureByte(s) {
   if (s.substr(0, 2) == '0x') { s = s.slice(2); }

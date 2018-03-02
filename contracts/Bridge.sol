@@ -25,11 +25,6 @@ contract Bridge {
     return BytesLib.concat(new bytes(12) , toBytes(a));
   }
 
-  // Use to simulate kind of console.log() for debugging
-  event DataStored(bytes indexed _data, bytes data);
-  function storeBytes(bytes data) public {
-    DataStored(data, data);
-  }
   // ===========================================================================
   // GLOBAL VARIABLES
   // ===========================================================================
