@@ -49,20 +49,21 @@ Function: prepWithdraw
 Purpose: Step 1 of withdrawal. Initialize a withdrawal and prove a transaction. Save the transaction root and other data.
 Arguments:
   * v (bytes: value of v received from transaction receipt in origin chain, see note below)
-  * [r, s, txRoot] (1)
+  * [r, s, txRoot, txHash] (1)
   * addrs (address[3]: [fromChain, depositToken, withdrawToken]. fromChain = address of origin chain bridge contract, depositToken = address of token deposited in the origin chain, withdrawToken = address of mapped token in this chain)
   * amount (bytes: amount deposited in origin chain, hex integer, atomic units)
   * path (bytes: path of deposit transaction in the transactions Merkle-Patricia tree)
   * parentNodes (bytes: concatenated list of parent nodes in the transaction Merkle-Patricia tree)
   * netVersion (bytes: version of the origin chain, only needed if v is EIP155 form, can be called from web3.version.network)   
-  * rlpDepositTxData (rlp binary encoded Deposit transaction data)
-  * rlpWithdrawTxData (rlp binary encoded Withdraw transaction data)
+  * rlpDepositTxData (rlp binary encoded Deposit transaction data, signed)
+
 ```
 
 (1) [r, s, txRoot]
   * r  (bytes32: value of r from the deposit transaction)
   * s  (bytes32: value of s from the deposit transaction)
   * txRoot (bytes32: transactionsRoot from block in which the deposit was made on the origin chain)
+  * txHash (bytes32: deposit transaction hash, excluding the signature)
 
 JavaScript code Example
 

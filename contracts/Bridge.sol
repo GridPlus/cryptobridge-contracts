@@ -248,28 +248,30 @@ contract Bridge {
 
   function prepWithdraw(
     bytes v,
-    bytes32[3] b32p, // r=0, s=1, txRoot=2
+    bytes32[4] b32p, // r=0, s=1, txRoot=2, txHash=3
     //bytes32 r, 
     //bytes32 s, 
-    address[3] addrs, 
+    address[3] addrs, // fromChain=0, depositToken=1, withdrawToken=2
     uint256 amount, 
     //bytes32 txRoot, 
     bytes path,
     bytes parentNodes, 
     bytes netVersion,
-    bytes rlpDepositTx,
-    bytes rlpWithdrawTx
+    bytes rlpDepositTx
     )
     public 
     {
 
     // LAZ:
-    // further reduction of parameters: find method to fetch values directly
-    // from the rlp-bytes. Reduction of this function is possible, but it cannot
-    // be merged with proveReceipt, see comments there.   
+    // Reduction of this function is possible, but it cannot be merged with 
+    // proveReceipt, see comments there.   
 
     //assert(tokens[addrs[0]][addrs[3]] == addrs[1]);
     // Form the transaction data.
+
+    // LAZ: 
+    // the following proof is based exclusively on external parameters. it could
+    // be moved out to javascript code (reduces around 20k gas) 
 
     // Make sure this transaction is the value on the path via a MerklePatricia proof
     assert(MerklePatriciaProof.verify(rlpDepositTx, path, parentNodes, b32p[2]) == true);
@@ -277,14 +279,14 @@ contract Bridge {
     // Ensure v,r,s belong to msg.sender
     // We want standardV as either 27 or 28
     uint8 standardV = getStandardV(v, BytesLib.toUint(BytesLib.leftPad(netVersion), 0));
-    assert(msg.sender == ecrecover(keccak256(rlpWithdrawTx), standardV, b32p[0], b32p[1]));
+    assert(msg.sender == ecrecover(b32p[3], standardV, b32p[0], b32p[1]));
 
     Withdrawal memory w;
     w.withdrawToken = addrs[2];
     w.fromChain = addrs[0];
     w.amount = amount;
     w.txRoot = b32p[2];
-    w.txHash = keccak256(rlpWithdrawTx);
+    w.txHash = b32p[3];
     pendingWithdrawals[msg.sender] = w;
   }
 

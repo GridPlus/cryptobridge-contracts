@@ -453,7 +453,7 @@ contract('Bridge', (accounts) => {
 
       // Make sure we are RLP encoding the transaction correctly. `encoded` corresponds
       // to what Solidity calculates.
-      const rlpDepositTxHex = rlp.encode([
+      const rlpDepositTxData = rlp.encode([
         nonce, 
         gasPrice, 
         gas, 
@@ -463,10 +463,10 @@ contract('Bridge', (accounts) => {
         deposit.v, 
         deposit.r, 
         deposit.s
-      ]).toString('hex');
+      ]);
 
       const rlpDepositTxProof = rlp.encode(proof.value).toString('hex');
-      assert(rlpDepositTxHex == rlpDepositTxProof, 'Tx RLP encoding incorrect');
+      assert(rlpDepositTxData.toString('hex') == rlpDepositTxProof, 'Tx RLP encoding incorrect');
 
       // Check the proof in JS first
       const checkpoint = txProof.verify(proof, 4);
@@ -475,23 +475,15 @@ contract('Bridge', (accounts) => {
       // Get the network version
       const version = parseInt(deposit.chainId);
 
-      const rlpDepositTxData = rlp.encode(proof.value);
-      const rlpWithdrawTxData = rlp.encode([
-        nonce, 
-        gasPrice, 
-        gas, 
-        BridgeB.options.address,
-        '', 
-        deposit.input, 
-        version, 
-        "", 
-        ""
-      ]);      
-        
+      // Create EthereumTx convenience object...
+      const depositTx = new EthereumTx(rlpDepositTxData);
+      // ...and retrieve txHash (false = exclude signature)
+      const txHash = depositTx.hash(false).toString('binary');
+     
       // Make the transaction
       const prepWithdraw = await BridgeA.prepWithdraw(
         deposit.v, 
-        [deposit.r, deposit.s, depositBlock.transactionsRoot],
+        [deposit.r, deposit.s, depositBlock.transactionsRoot, txHash],
         [BridgeB.options.address, tokenB.options.address, tokenA.address], 
         5,
         path, 
@@ -499,7 +491,6 @@ contract('Bridge', (accounts) => {
         version,
         //LAZ: passing as 'hex' results in ascii beeing received in contract
         rlpDepositTxData.toString('binary'),
-        rlpWithdrawTxData.toString('binary'),
         { from: wallets[2][0], gas: 500000 }
       );
 
