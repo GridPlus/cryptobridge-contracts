@@ -1,5 +1,7 @@
 # Cryptobridge Contracts
 
+## This module was experimental and has been deprecated in favor of superior Plasma designs within the Ethereum community
+
 **WARNING:**
 This package is functional, but is unaudited and in still in development. It should not be used in production systems with large amounts of value.
 
