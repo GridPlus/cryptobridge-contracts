@@ -121,16 +121,16 @@ contract('Bridge', (accounts) => {
     startingBlockNumber = syncData[1];
   });
 
-  describe('Wallets', () => {
-    it('Should create wallets for first 5 accounts', async () => {
+  describe('wallets', () => {
+    it('creates wallets for the first 5 accounts', async () => {
       wallets = generateFirstWallets(5, [], 0);
       assert(wallets.length == 5);
       assert(wallets[1][0] == accounts[0]);
     })
   })
 
-  describe('Admin: Bridge setup', () => {
-    it('Should create a token on chain A and give it out to accounts 1-3', async () => {
+  describe('admin: bridge setup', () => {
+    it('creates a token on chain "A" and gives it out to accounts 1-3', async () => {
       stakingToken = await Token.new(1000, 'Staking', 0, 'STK', { from: accounts[0] });
       console.log('Staking token A: ', stakingToken.address);
       // Need to stake from wallets rather than accounts since validators sigs
@@ -145,7 +145,7 @@ contract('Bridge', (accounts) => {
       await stakingToken.transfer(wallets[4][0], 100);
     });
 
-    it('Should create the Bridge with the token as the staking token', async () => {
+    it('creates the bridge with the token as the staking token', async () => {
       BridgeA = await Bridge.new(stakingToken.address, { from: accounts[0] });
       const admin = await BridgeA.admin();
       assert(admin == accounts[0]);
@@ -156,13 +156,13 @@ contract('Bridge', (accounts) => {
     // failing validation checks. I'm really not sure why, but I've knocked it
     // down to 2 and it works fine.
     // TODO: Investigate this further
-    it('Should set the validator threshold to 2', async () => {
+    it('sets the validator threshold to 2', async () => {
       await BridgeA.updateValidatorThreshold(2);
       const thresh = await BridgeA.validatorThreshold();
       assert(parseInt(thresh) === 2);
     })
 
-    it('Should give a small amount of ether to the Bridge', async () => {
+    it('gives a small amount of ether to the bridge', async () => {
       await web3A.eth.sendTransaction({
         to: BridgeA.address,
         value: 10 ** 17,
@@ -170,14 +170,14 @@ contract('Bridge', (accounts) => {
       });
     });
 
-    it('Should set the reward parameters of the Bridge', async () => {
+    it('sets the reward parameters of the bridge', async () => {
       const BASE = 10 ** 16;
       await BridgeA.updateReward(BASE, 0, BASE, { from: accounts[0] });
       const maxReward = await BridgeA.maxReward();
       assert(maxReward == BASE);
     });
 
-    it('Should stake via wallets[1]', async () => {
+    it('stakes via wallets[1]', async () => {
       const user = wallets[1][0];
       const amount = 1;
       await stakingToken.approve(BridgeA.address, amount, { from: user });
@@ -190,7 +190,7 @@ contract('Bridge', (accounts) => {
       assert(parseInt(currentStake) === amount);
     })
 
-    it('Should stake via wallets[2]', async () => {
+    it('stakes via wallets[2]', async () => {
       const user = wallets[2][0];
       const amount = 1;
       await stakingToken.approve(BridgeA.address, amount, { from: user });
@@ -201,7 +201,7 @@ contract('Bridge', (accounts) => {
       assert(parseInt(currentStake) === amount);
     });
 
-    it('Should stake via wallets[3]', async () => {
+    it('stakes via wallets[3]', async () => {
       const user = wallets[3][0];
       const amount = 10;
       await stakingToken.approve(BridgeA.address, amount, { from: user });
@@ -212,7 +212,7 @@ contract('Bridge', (accounts) => {
       assert(parseInt(currentStake) === amount);
     });
 
-    it('Should stake via wallets[4]', async () => {
+    it('stakes via wallets[4]', async () => {
       const user = wallets[4][0];
       const amount = 100;
       await stakingToken.approve(BridgeA.address, amount, { from: user });
@@ -223,13 +223,13 @@ contract('Bridge', (accounts) => {
       assert(parseInt(currentStake) === amount);
     });
 
-    it('Should destake a small amount from wallets[4]', async () => {
+    it('destake a small amount from wallets[4]', async () => {
       await BridgeA.destake(1, { from: wallets[4][0] });
       const stakeSumTmp = await BridgeA.stakeSum();
       assert(parseInt(stakeSumTmp) === 111);
     })
 
-    it('Should get the proposer and make sure it is a staker', async () => {
+    it('gets the proposer and makes sure it is a staker', async () => {
       const seed = await BridgeA.epochSeed();
       let stakeSum = await BridgeA.stakeSum();
       stakeSum = parseInt(stakeSum);
@@ -237,7 +237,7 @@ contract('Bridge', (accounts) => {
       assert(proposer === wallets[1][0] || proposer === wallets[2][0] || proposer === wallets[3][0] || proposer === wallets[4][0]);
     });
 
-    it('Should deploy MerkleLib and use it to deploy a Bridge on chain B', async () => {
+    it('deploys merklelib and uses it to deploy a bridge on chain B', async () => {
       // Deploy the library
       const libReceipt = await web3B.eth.sendTransaction({
         from: accounts[0],
@@ -259,8 +259,8 @@ contract('Bridge', (accounts) => {
     });
   });
 
-  describe('Admin: Token mapping', () => {
-    it('Should create a new token (token B) on chain B', async () => {
+  describe('admin: token mapping', () => {
+    it('creates a new token (token B) on chain B', async () => {
       const tokenBTmp = await new web3B.eth.Contract(tokenABI);
       await tokenBTmp.deploy({
         data: tokenBytes,
@@ -274,11 +274,11 @@ contract('Bridge', (accounts) => {
       })
     });
 
-    it('Should create a new token (token A) on chain A', async () => {
+    it('creates a new token (token A) on chain A', async () => {
       tokenA = await Token.new(1000, 'TokenA', 0, 'TKA', { from: accounts[0] });
     });
 
-    it('Should fail to map tokenB because it has not been given allowance', async () => {
+    it('fails to map token B because it has not been given allowance', async () => {
       try {
         await BridgeA.addToken(tokenA.address, tokenB.options.address, BridgeB.options.address)
       } catch (err) {
@@ -286,39 +286,39 @@ contract('Bridge', (accounts) => {
       }
     });
 
-    it('Should map token on chain A to the one on chain B', async () => {
+    it('maps token on chain A to the one on chain B', async () => {
       await tokenA.approve(BridgeA.address, 1000);
       await BridgeA.addToken(tokenA.address, tokenB.options.address, BridgeB.options.address)
       const tkB = await BridgeA.getTokenMapping(BridgeB.options.address, tokenB.options.address);
       assert(tkB.toLowerCase() == tokenA.address.toLowerCase());
     });
 
-    it('Should map token on chainB to the one on chain A', async () => {
+    it('maps token on chain B to the one on chain A', async () => {
       await BridgeB.methods.associateToken(tokenA.address, tokenB.options.address, BridgeA.address)
         .send({ from: accounts[0] });
       const associatedToken = await BridgeB.methods.getTokenMapping(BridgeA.address, tokenA.address).call();
       assert(associatedToken.toLowerCase() == tokenB.options.address.toLowerCase());
     })
 
-    it('Should ensure the Bridge on chain A has all of the mapped token', async () => {
+    it('ensures the bridge on chain A has all of the mapped token', async () => {
       const supply = await tokenA.totalSupply();
       const held = await tokenA.balanceOf(BridgeA.address);
       assert(parseInt(supply) === parseInt(held));
     });
 
-    it('Should give 5 token B to wallets[1]', async () => {
+    it('gives 5 token Bs to wallets[1]', async () => {
       const r = await tokenB.methods.transfer(wallets[2][0], 5).send({ from: accounts[0] })
       const balance = await tokenB.methods.balanceOf(wallets[2][0]).call();
       assert(parseInt(balance) === 5);
     });
   });
 
-  describe('Stakers: Bridge backlog', () => {
+  describe('stakers: bridge backlog', () => {
     let ends = [];
     let sigData = [];
     const headerRoot = sha3('fake'); // We can fake this one since there are no deposits
 
-    it('Should get a set of end points to Bridge (powers of two)', async () => {
+    it('gets a set of endpoints to bridge (powers of two)', async () => {
       let _ends = [];
       // Get to the latest block with a set of end points
       const latestBlock = await web3B.eth.getBlockNumber();
@@ -340,15 +340,15 @@ contract('Bridge', (accounts) => {
       })
     });
 
-    it('Should go through end points and get signatures', async () => {
+    it('goes through endpoints and gets signatures', async () => {
       const _lastBlock = await BridgeA.getLastBlock(BridgeB.options.address);
       const saved = await saveDummyCheckpoints(ends, _lastBlock + 1);
       assert(saved === true);
     });
   });
 
-  describe('User: Deposit tokens on chain B', () => {
-    it('Should deposit 5 token B to the Bridge on chain B', async () => {
+  describe('user: deposit tokens on chain B', () => {
+    it('deposits 5 token Bs to the bridge on chain B', async () => {
       await tokenB.methods.approve(BridgeB.options.address, 5).send({ from: wallets[2][0] })
       const allowance = await tokenB.methods.allowance(accounts[1], BridgeB.options.address).call();
       const _deposit = await BridgeB.methods.deposit(tokenB.options.address, BridgeA.address, 5)
@@ -361,12 +361,12 @@ contract('Bridge', (accounts) => {
     });
   })
 
-  describe('Stakers: Bridge blocks', () => {
+  describe('stakers: bridge blocks', () => {
     let end;
     let sigData;
     let lastBlock
 
-    it('Should fast forward blockchain to next power of two', async() => {
+    it('fast forwards blockchain to next power of two', async() => {
       lastBlock = await BridgeA.getLastBlock(BridgeB.options.address);
       lastBlock = parseInt(lastBlock);
       const currentBlock = await web3B.eth.getBlockNumber();
@@ -378,21 +378,21 @@ contract('Bridge', (accounts) => {
       assert(blocks.isPowTwo(end - lastBlock) === true);
     });
 
-    it('Should get tree headers', async () => {
+    it('gets tree headers', async () => {
       const currentBlockNumber = await web3B.eth.getBlockNumber();
       assert(currentBlockNumber > startingBlockNumber, 'Your chain is oversynced. Did you delete your "lastBlock" file?')
       const allHeaders = await blocks.getHeaders(startingBlockNumber, currentBlockNumber, web3B, [startingHeader]);
       treeHeaders = allHeaders.slice(allHeaders.length - (currentBlockNumber - lastBlock));
     });
 
-    it('Should form a Merkle tree from the last block headers, get signatures, and submit to chain A', async () => {
+    it('forms a merkle tree from the last block headers, get signatures, and submits to chain A', async () => {
       depositHeader = treeHeaders[depositBlock.number - (lastBlock + 1)];
       tree = merkle.buildTree(treeHeaders);
       assert(tree[tree.length - 1].length == 1, 'Merkle tree formatted incorrectly - no root.');
       headerRoot = tree[tree.length - 1][0];
     });
 
-    it('Should get signatures from stakers for proposed header root and check them', async () => {
+    it('gets signatures from stakers for proposed header root and checks them', async () => {
       // Sign and store
       let signers = [];
       const msg = val.getMsg(headerRoot, BridgeB.options.address, lastBlock + 1, end);
@@ -426,9 +426,9 @@ contract('Bridge', (accounts) => {
     });
   })
 
-  describe('User: Withdraw tokens on chain A', () => {
+  describe('user: withdraw tokens on chain A', () => {
 
-    it('Should check that the deposit txParams hash was signed by wallets[2]', async () => {
+    it('checks that the deposit txParams hash was signed by wallets[2]', async () => {
       const unsignedDeposit = deposit;
       unsignedDeposit.value = '';
       unsignedDeposit.gasPrice = parseInt(deposit.gasPrice);
@@ -442,7 +442,7 @@ contract('Bridge', (accounts) => {
     });
 
 
-   it('Should prepare the withdrawal with the transaction data (wallets[2])', async () => {
+   it('prepares the withdrawal with the transaction data (wallets[2])', async () => {
       const proof = await txProof.build(deposit, depositBlock);
       const path = ensureByte(rlp.encode(proof.path).toString('hex'));
       const parentNodes = ensureByte(rlp.encode(proof.parentNodes).toString('hex'));
@@ -508,14 +508,14 @@ contract('Bridge', (accounts) => {
     })
 
     //LAZ: use wallets[2][0] instead of accounts[2], see problems described above 
-    it('Should check the pending withdrawal fields', async () => {
+    it('checks the pending withdrawal fields', async () => {
       const pendingToken = await BridgeA.getPendingToken( wallets[2][0] );
       assert(pendingToken.toLowerCase() == tokenA.address.toLowerCase());
       const pendingFromChain = await BridgeA.getPendingFromChain( wallets[2][0] );
       assert(pendingFromChain.toLowerCase() == BridgeB.options.address.toLowerCase());
     })
 
-    it('Should prove the state root', async () => {
+    it('proves the state root', async () => {
       // Get the receipt proof
       const receiptProof = await rProof.buildProof(depositReceipt, depositBlockSlim, web3B);
       const path = ensureByte(rlp.encode(receiptProof.path).toString('hex'));
@@ -551,7 +551,7 @@ contract('Bridge', (accounts) => {
       console.log('proveReceipt gas usage:', proveReceipt.receipt.gasUsed);
     });
 
-    it('Should submit the required data and make the withdrawal', async () => {
+    it('submits the required data and make the withdrawal', async () => {
       let hI;
       treeHeaders.forEach((header, i) => {
         if (header == depositHeader) { hI = i; }
