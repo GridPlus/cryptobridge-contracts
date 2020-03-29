@@ -1,5 +1,3 @@
-pragma solidity 0.6.4;
-
 /*
  * @title MerklePatriciaVerifier
  * @author Sam Mayo (sammayo888@gmail.com)
